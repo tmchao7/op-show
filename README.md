@@ -33,6 +33,8 @@ An agent can read a local source file and create a model using [the format guide
 
 The portable agent instructions are in [skills/op-show/SKILL.md](skills/op-show/SKILL.md). Link that directory into an agent's skill directory so its references to this checkout stay valid; agents without skill support can follow the same CLI and format guide. The CLI does not call a model itself.
 
+For follow-on development, read [AGENTS.md](AGENTS.md) and use the copyable [agent handoff prompt](docs/AGENT_HANDOFF.md).
+
 The validator checks literal source line references, safe integer formulas, worker-to-tile coverage, bounds, padding, address samples, and dependency cycles. For the v2 QKV format it also checks flat task IDs, PID claims, peer/output offsets, signal slots, full output coverage, and notify/wait pairing. **It cannot prove that an arbitrary CUDA or Triton program is equivalent to an agent's description.** Only use `source-backed` for simple, explicit mappings you can inspect. For dynamic or uncertain mappings, use `"status": "unknown"` with a note; the page disables playback.
 
 ## Ideal execution model
