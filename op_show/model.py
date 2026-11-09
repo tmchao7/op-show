@@ -206,6 +206,24 @@ def validate_model(path):
     grid_ref = _evidence(mapping.get("grid_source_ref"), refs, "worker grid")
     base["grid_source_ref"] = grid_ref
     base["worker_labels"] = mapping.get("worker_labels", {})
+    gemm_view = mapping.get("gemm_view")
+    if gemm_view is not None:
+        _require(isinstance(gemm_view, dict), "mapping.gemm_view must be an object")
+        m_axis, n_axis = gemm_view.get("m_axis"), gemm_view.get("n_axis")
+        _require(len(axes) == 2 and [m_axis, n_axis] == names,
+                 "gemm_view axes must match the two output tile axes")
+        source_refs = gemm_view.get("source_refs")
+        _require(isinstance(source_refs, dict) and set(source_refs) == {"a", "b", "mma", "c"},
+                 "gemm_view.source_refs must cite A, B, MMA, and C")
+        for key, ref in source_refs.items():
+            _evidence(ref, refs, f"gemm_view.source_refs.{key}")
+        step_roles = gemm_view.get("step_roles")
+        _require(isinstance(step_roles, dict) and step_roles,
+                 "gemm_view.step_roles must map step IDs to matrices")
+        for step_id, roles in step_roles.items():
+            _require(isinstance(step_id, str) and isinstance(roles, list) and roles and
+                     all(isinstance(role, str) and role in ("A", "B", "C") for role in roles),
+                     f"gemm_view.step_roles.{step_id} must contain A, B, or C")
     scenarios = document.get("scenarios")
     _require(isinstance(scenarios, list) and len(scenarios) == 2,
              "exactly two scenarios (aligned and padded) are required")
@@ -246,6 +264,18 @@ def validate_model(path):
                  f"{scenario_id}: demo supports at most {MAX_TILES} tiles")
         steps = _steps(mapping.get("program"), params, refs)
         phase_count = max((step["iteration"] for step in steps if step["iteration"] is not None), default=0) + 1
+        view_scenario = None
+        if gemm_view is not None:
+            k_extent = _number(gemm_view.get("k_extent"), params, "gemm_view.k_extent")
+            k_size = _number(gemm_view.get("k_size"), params, "gemm_view.k_size")
+            _require(k_extent > 0 and k_size > 0, "gemm_view K extent and tile must be positive")
+            _require(phase_count == (k_extent + k_size - 1) // k_size,
+                     "gemm_view K slices do not match program loop")
+            _require(set(gemm_view["step_roles"]) <= {step["id"] for step in steps},
+                     "gemm_view.step_roles cites an unknown step")
+            view_scenario = {"m_axis": m_axis, "n_axis": n_axis, "k_extent": k_extent,
+                             "k_size": k_size, "source_refs": gemm_view["source_refs"],
+                             "step_roles": gemm_view["step_roles"]}
         tiles = []
         lookup = {}
         for z, y, x in itertools.product(range(grid_sizes["z"]), range(grid_sizes["y"]), range(grid_sizes["x"])):
@@ -281,6 +311,6 @@ def validate_model(path):
         base["scenarios"].append({"id": scenario_id, "label": scenario.get("label", scenario_id),
                                    "label_zh": label_zh,
                                    "params": params, "dimensions": dimensions, "grid": grid_sizes,
-                                   "steps": steps, "tiles": tiles,
+                                   "steps": steps, "tiles": tiles, "gemm_view": view_scenario,
                                    "total_ticks": max(tile["end"] for tile in tiles)})
     return base, source_text

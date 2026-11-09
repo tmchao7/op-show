@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "title": "CUDA Tensor Core · WMMA GEMM",
+  "title_zh": "CUDA Tensor Core · WMMA 矩阵乘",
+  "backend": "cuda",
+  "source": {
+    "path": "sources/cuda_tensor_core_gemm.cu",
+    "kernel": "tensor_core_gemm",
+    "refs": {
+      "grid": {
+        "line": 63,
+        "contains": "dim3 grid((N + TILE_N - 1) / TILE_N, (M + TILE_M - 1) / TILE_M)"
+      },
+      "tile_m": {
+        "line": 15,
+        "contains": "const int tile_m = blockIdx.y"
+      },
+      "tile_n": {
+        "line": 16,
+        "contains": "const int tile_n = blockIdx.x"
+      },
+      "loop": {
+        "line": 30,
+        "contains": "for (int k0 = 0; k0 < K; k0 += TILE_K)"
+      },
+      "stage": {
+        "line": 32,
+        "contains": "for (int i = lane; i < TILE_M * TILE_K; i += 32)"
+      },
+      "mask_a": {
+        "line": 39,
+        "contains": "a_shared[i] = (a_row < M && a_col < K)"
+      },
+      "mask_b": {
+        "line": 41,
+        "contains": "b_shared[i] = (b_row < K && b_col < N)"
+      },
+      "a_address": {
+        "line": 40,
+        "contains": "? A[a_row * K + a_col]"
+      },
+      "b_address": {
+        "line": 42,
+        "contains": "? B[b_row * N + b_col]"
+      },
+      "sync": {
+        "line": 44,
+        "contains": "__syncthreads();"
+      },
+      "load_a": {
+        "line": 45,
+        "contains": "wmma::load_matrix_sync(a_frag, a_shared, TILE_K)"
+      },
+      "load_b": {
+        "line": 46,
+        "contains": "wmma::load_matrix_sync(b_frag, b_shared, TILE_N)"
+      },
+      "mma": {
+        "line": 47,
+        "contains": "wmma::mma_sync(acc, a_frag, b_frag, acc)"
+      },
+      "sync_after": {
+        "line": 48,
+        "contains": "__syncthreads();  // No lane overwrites shared A/B"
+      },
+      "fragment_store": {
+        "line": 51,
+        "contains": "wmma::store_matrix_sync(c_shared, acc, TILE_N, wmma::mem_row_major)"
+      },
+      "sync_out": {
+        "line": 52,
+        "contains": "__syncthreads();"
+      },
+      "store": {
+        "line": 56,
+        "contains": "if (row < M && col < N) C[row * N + col] = c_shared[i]"
+      },
+      "warp": {
+        "line": 62,
+        "contains": "dim3 block(32)"
+      },
+      "tile_size": {
+        "line": 9,
+        "contains": "constexpr int TILE_M = 16"
+      }
+    }
+  },
+  "mapping": {
+    "status": "source-backed",
+    "note": "Illustrative one-warp CUDA block per 16×16 C tile; A/B zero-padded in shared memory. Logical progress only, not measured Tensor Core timing.",
+    "note_zh": "示例中每个 32-lane warp/block 负责一个 16×16 C tile；A/B 在 shared memory 中零填充。只展示逻辑进度，不代表 Tensor Core 实测耗时。",
+    "grid_source_ref": "grid",
+    "worker_labels": {
+      "x": "blockIdx.x",
+      "y": "blockIdx.y"
+    },
+    "worker_grid": {
+      "x": "ceildiv(N, BN)",
+      "y": "ceildiv(M, BM)"
+    },
+    "tile_axes": [
+      {
+        "name": "M",
+        "extent": "M",
+        "size": "BM",
+        "index": "wid_y",
+        "source_ref": "tile_m"
+      },
+      {
+        "name": "N",
+        "extent": "N",
+        "size": "BN",
+        "index": "wid_x",
+        "source_ref": "tile_n"
+      }
+    ],
+    "program": [
+      {
+        "repeat": "ceildiv(K, BK)",
+        "loop_axis": "K",
+        "loop_tile": "BK",
+        "loop_source_ref": "loop",
+        "steps": [
+          {
+            "id": "stage",
+            "label": "Stage A/B with zero padding",
+            "label_zh": "A/B 零填充到共享内存",
+            "source_ref": "stage"
+          },
+          {
+            "id": "sync",
+            "label": "Block barrier",
+            "label_zh": "Block 同步",
+            "source_ref": "sync"
+          },
+          {
+            "id": "load",
+            "label": "Load WMMA fragments",
+            "label_zh": "加载 WMMA fragments",
+            "source_ref": "load_a"
+          },
+          {
+            "id": "mma",
+            "label": "Tensor Core MMA",
+            "label_zh": "Tensor Core 矩阵乘累加",
+            "source_ref": "mma"
+          },
+          {
+            "id": "sync-after",
+            "label": "Protect shared A/B before next K slice",
+            "label_zh": "保护共享内存再进入下一 K 分片",
+            "source_ref": "sync_after"
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "id": "fragment-store",
+            "label": "Store accumulator to shared C",
+            "label_zh": "Accumulator 写到共享内存 C",
+            "source_ref": "fragment_store"
+          },
+          {
+            "id": "sync-out",
+            "label": "Block barrier",
+            "label_zh": "Block 同步",
+            "source_ref": "sync_out"
+          },
+          {
+            "id": "store",
+            "label": "Store valid C elements",
+            "label_zh": "仅写回有效 C 元素",
+            "source_ref": "store"
+          }
+        ]
+      }
+    ],
+    "addresses": [
+      {
+        "label": "A first element offset",
+        "label_zh": "A 首元素偏移",
+        "expr": "row * K + k",
+        "sample": {
+          "row": "tile_M * BM",
+          "k": "phase * BK"
+        },
+        "source_ref": "a_address"
+      },
+      {
+        "label": "B first element offset",
+        "label_zh": "B 首元素偏移",
+        "expr": "k * N + col",
+        "sample": {
+          "k": "phase * BK",
+          "col": "tile_N * BN"
+        },
+        "source_ref": "b_address"
+      },
+      {
+        "label": "C first element offset",
+        "label_zh": "C 首元素偏移",
+        "expr": "row * N + col",
+        "sample": {
+          "row": "tile_M * BM",
+          "col": "tile_N * BN"
+        },
+        "source_ref": "store"
+      }
+    ],
+    "dependencies": [],
+    "gemm_view": {
+      "m_axis": "M",
+      "n_axis": "N",
+      "k_extent": "K",
+      "k_size": "BK",
+      "source_refs": {
+        "a": "a_address",
+        "b": "b_address",
+        "mma": "mma",
+        "c": "store"
+      },
+      "step_roles": {
+        "stage": [
+          "A",
+          "B"
+        ],
+        "load": [
+          "A",
+          "B"
+        ],
+        "mma": [
+          "A",
+          "B",
+          "C"
+        ],
+        "fragment-store": [
+          "C"
+        ],
+        "store": [
+          "C"
+        ]
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "aligned",
+      "label": "M=N=K=32 · full tiles",
+      "label_zh": "M=N=K=32 · 完整 tile",
+      "params": {
+        "M": 32,
+        "N": 32,
+        "K": 32,
+        "BM": 16,
+        "BN": 16,
+        "BK": 16
+      }
+    },
+    {
+      "id": "padded",
+      "label": "M=27,N=21,K=19 · three tails",
+      "label_zh": "M=27、N=21、K=19 · 三维尾块",
+      "params": {
+        "M": 27,
+        "N": 21,
+        "K": 19,
+        "BM": 16,
+        "BN": 16,
+        "BK": 16
+      }
+    }
+  ]
+}

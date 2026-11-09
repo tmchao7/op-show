@@ -36,7 +36,8 @@ const translations = {
     sourceExplanation: '这些代码行与本地源码逐字对应。公式由 agent 提出，校验器检查描述与覆盖范围。使用前请对照源码复核公式。',
     mappingUnknown: '映射未知：{note}。已禁用播放。', loadError: '无法加载描述或源码',
     catalogError: '无法加载算子列表', pageTitle: 'OP/SHOW — 算子 Tile 执行图解',
-    traceHeading: '01 / 数据如何流动', traceTitle: '从 Producer Tile 到 Consumer 输出', sourceRank: '来源 Rank', targetRank: '目标 Rank', tensor: '输出张量', producerMatrix: 'Producer 数据矩阵', claimTable: 'PID 认领表', peerPath: 'peer_mem 数据路径', consumerMatrix: 'Consumer 输出矩阵', producerHint: '行是 block，列是目标 Rank 与 head group；颜色区分 G0–G4。', claimHint: '每行一个 Producer PID；每列是本 Wave 中按步长 16 认领的任务。', consumerHint: '行是来源 Rank 与 block，列是 head group；Q/K/V 使用相同坐标。', logicalEvents: '逻辑事件与依赖', traceTiming: '每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。'
+    traceHeading: '01 / 数据如何流动', traceTitle: '从 Producer Tile 到 Consumer 输出', sourceRank: '来源 Rank', targetRank: '目标 Rank', tensor: '输出张量', producerMatrix: 'Producer 数据矩阵', claimTable: 'PID 认领表', peerPath: 'peer_mem 数据路径', consumerMatrix: 'Consumer 输出矩阵', producerHint: '行是 block，列是目标 Rank 与 head group；颜色区分 G0–G4。', claimHint: '每行一个 Producer PID；每列是本 Wave 中按步长 16 认领的任务。', consumerHint: '行是来源 Rank 与 block，列是 head group；Q/K/V 使用相同坐标。', logicalEvents: '逻辑事件与依赖', traceTiming: '每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。',
+    gemmTitle: '当前 Tensor Core 矩阵分片', gemmHint: '点击上方 C tile，再按时间轴查看 A/B 的 K 分片如何累加到 C。斜纹元素在 shared memory 中填零或在输出时跳过。', gemmMaskLegend: 'A/B 的斜纹格：越界后填零；C 的斜纹格：不写入输出。', gemmPhase: 'K 分片 {current}/{total}', gemmValid: '{count}/{total} 个有效元素'
   },
   en: {
     topCaption: 'HARDWARE-FREE KERNEL WALKTHROUGH', local: 'LOCAL',
@@ -70,7 +71,8 @@ const translations = {
     sourceExplanation: 'These lines are literal matches to the local source. The agent proposes the formulas; the validator checks the model and coverage. Review the formulas against the source before relying on them.',
     mappingUnknown: 'Mapping unknown: {note}. Playback is disabled.', loadError: 'Could not load model or source',
     catalogError: 'Could not load catalog', pageTitle: 'OP/SHOW — Tile execution explorer',
-    traceHeading: '01 / DATA FLOW', traceTitle: 'Producer tiles to Consumer output', sourceRank: 'SOURCE RANK', targetRank: 'TARGET RANK', tensor: 'OUTPUT TENSOR', producerMatrix: 'Producer data matrix', claimTable: 'PID claim table', peerPath: 'peer_mem data path', consumerMatrix: 'Consumer output matrix', producerHint: 'Rows are blocks; columns are target ranks and head groups. G0–G4 colors identify data groups.', claimHint: 'Each row is one Producer PID; columns show stride-16 claims in this wave.', consumerHint: 'Rows are source ranks and blocks; columns are head groups. Q/K/V share coordinates.', logicalEvents: 'Logical events and dependencies', traceTiming: 'Each step completes all events with satisfied dependencies. A wave is not a global PID barrier or device time.'
+    traceHeading: '01 / DATA FLOW', traceTitle: 'Producer tiles to Consumer output', sourceRank: 'SOURCE RANK', targetRank: 'TARGET RANK', tensor: 'OUTPUT TENSOR', producerMatrix: 'Producer data matrix', claimTable: 'PID claim table', peerPath: 'peer_mem data path', consumerMatrix: 'Consumer output matrix', producerHint: 'Rows are blocks; columns are target ranks and head groups. G0–G4 colors identify data groups.', claimHint: 'Each row is one Producer PID; columns show stride-16 claims in this wave.', consumerHint: 'Rows are source ranks and blocks; columns are head groups. Q/K/V share coordinates.', logicalEvents: 'Logical events and dependencies', traceTiming: 'Each step completes all events with satisfied dependencies. A wave is not a global PID barrier or device time.',
+    gemmTitle: 'Current Tensor Core matrix slices', gemmHint: 'Select a C tile above, then use the timeline to see successive A/B K slices accumulate into C. Striped cells are zero-filled in shared memory or skipped on output.', gemmMaskLegend: 'Striped A/B cells are zero-filled; striped C cells are not stored.', gemmPhase: 'K slice {current}/{total}', gemmValid: '{count}/{total} valid elements'
   }
 };
 
@@ -197,8 +199,10 @@ function setLanguage(language) {
 
 function renderMetrics() {
   const scenario = currentScenario();
-  const shape = scenario.dimensions.map((dim) => `${dim.name}=${dim.extent}`).join(' · ');
-  const sizes = scenario.dimensions.map((dim) => dim.size).join(' × ');
+  const shape = scenario.dimensions.map((dim) => `${dim.name}=${dim.extent}`)
+    .concat(scenario.gemm_view ? [`K=${scenario.gemm_view.k_extent}`] : []).join(' · ');
+  const sizes = scenario.dimensions.map((dim) => dim.size)
+    .concat(scenario.gemm_view ? [scenario.gemm_view.k_size] : []).join(' × ');
   const pad = scenario.tiles.reduce((sum, tile) => sum + tile.total_cells - tile.valid_cells, 0);
   const metrics = [
     [t('metricShape'), escapeHtml(shape), ''],
@@ -230,6 +234,49 @@ function renderGrid() {
   }).join('');
   const independent = scenario.tiles.filter((tile) => !tile.dependencies.length).length;
   $('grid-footer').innerHTML = `<span>${t('gridParallel', {count: independent})}</span><span>${t('gridHint')}</span>`;
+}
+
+function renderGemmView() {
+  const scenario = currentScenario();
+  const view = scenario.gemm_view;
+  $('gemm-view').hidden = !view;
+  if (!view) return;
+  const tile = selectedTile();
+  const [m, n] = tile.bounds;
+  const loopSteps = scenario.steps.filter((step) => step.iteration !== null);
+  const current = activeStep();
+  const phase = current?.iteration ?? (state.tick > tile.start + loopSteps.length - 1 ?
+    loopSteps[loopSteps.length - 1].iteration : 0);
+  const kStart = phase * view.k_size;
+  const kEnd = Math.min(kStart + view.k_size, view.k_extent);
+  const roles = view.step_roles[current?.id] || [];
+  $('gemm-phase').textContent = t('gemmPhase', {
+    current: phase + 1, total: Math.ceil(view.k_extent / view.k_size)
+  });
+  function matrix(name, rowStart, colStart, rows, cols, rowEnd, colEnd, rowAxis, colAxis, ref) {
+    let cells = '';
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const valid = rowStart + r < rowEnd && colStart + c < colEnd;
+      const coord = `${rowAxis}${rowStart + r}, ${colAxis}${colStart + c}`;
+      cells += `<span class="gemm-cell ${valid ? '' : 'masked'}" title="${escapeHtml(coord)} · ${t(valid ? 'validCell' : 'maskedCell')}"></span>`;
+    }
+    const count = (rowEnd - rowStart) * (colEnd - colStart);
+    return `<div class="gemm-matrix-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}">
+      <div class="gemm-matrix-top"><strong>${name}</strong><button type="button" data-source-ref="${escapeHtml(ref)}">L${state.model.refs[ref].line} ↗</button></div>
+      <div class="gemm-matrix-range">${rowAxis}[${rowStart}:${rowEnd}) × ${colAxis}[${colStart}:${colEnd})</div>
+      <div class="gemm-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}">${cells}</div>
+      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}</div></div>`;
+  }
+  $('gemm-matrices').innerHTML = [
+    matrix('A', m.start, kStart, m.tile_end - m.start, view.k_size, m.end, kEnd,
+      view.m_axis, 'K', view.source_refs.a),
+    '<div class="gemm-operator" aria-hidden="true">×</div>',
+    matrix('B', kStart, n.start, view.k_size, n.tile_end - n.start, kEnd, n.end,
+      'K', view.n_axis, view.source_refs.b),
+    '<div class="gemm-operator" aria-hidden="true">→</div>',
+    matrix('C', m.start, n.start, m.tile_end - m.start, n.tile_end - n.start, m.end, n.end,
+      view.m_axis, view.n_axis, view.source_refs.c)
+  ].join('');
 }
 
 function renderPlayback() {
@@ -336,6 +383,7 @@ function render() {
   if (trace) { TraceView.render(); renderSource(); return; }
   renderMetrics();
   renderGrid();
+  renderGemmView();
   renderPlayback();
   renderInspector();
   renderSource();
@@ -404,6 +452,13 @@ $('tile-grid').addEventListener('click', (event) => {
   state.selected = button.dataset.tile;
   state.highlightedRef = null;
   render();
+});
+$('gemm-matrices').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-source-ref]');
+  if (!button) return;
+  state.highlightedRef = button.dataset.sourceRef;
+  renderSource();
+  $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
 });
 $('stage-strip').addEventListener('click', (event) => {
   const button = event.target.closest('[data-step]');

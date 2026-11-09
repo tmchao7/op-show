@@ -42,6 +42,13 @@
               <div class="grid-footer" id="grid-footer"></div>
             </section>
 
+            <section class="panel gemm-panel" id="gemm-view" hidden>
+              <div class="panel-head"><div><div class="section-kicker">A × B → C</div><h2 data-i18n="gemmTitle">当前 Tensor Core 矩阵分片</h2></div><span id="gemm-phase" class="gemm-phase"></span></div>
+              <p class="trace-description" data-i18n="gemmHint">点击上方 C tile，再按时间轴查看 A/B 的 K 分片如何累加到 C。斜纹元素在 shared memory 中填零或在输出时跳过。</p>
+              <div id="gemm-matrices" class="gemm-matrices"></div>
+              <p class="playback-footnote" data-i18n="gemmMaskLegend">A/B 的斜纹格：越界后填零；C 的斜纹格：不写入输出。</p>
+            </section>
+
             <section class="panel playback-panel">
               <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionExecution">02 / 理想化执行</div><h2 data-i18n="parallelTitle">无依赖的 tile 同时推进</h2></div><span class="progress-count" id="progress-count">0%</span></div>
               <div class="playback-controls">

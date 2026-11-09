@@ -32,6 +32,37 @@ class ModelTests(unittest.TestCase):
             k_steps = [step for step in scenario["steps"] if step["loop_axis"] == "K"]
             self.assertLess(k_steps[-1]["loop_valid"], scenario["params"]["BK"])
 
+    def test_tensor_core_gemm_tiles_and_matrix_slices(self):
+        model, source = validate_model(EXAMPLES / "cuda_tensor_core_gemm.json")
+        self.assertIn("wmma::mma_sync(acc, a_frag, b_frag, acc)", source)
+        self.assertIn("__align__(32) half a_shared", source)
+        aligned, padded = model["scenarios"]
+        self.assertEqual(len(aligned["tiles"]), 4)
+        self.assertTrue(all(tile["valid_cells"] == 256 for tile in aligned["tiles"]))
+        self.assertEqual((padded["gemm_view"]["k_extent"], padded["gemm_view"]["k_size"]), (19, 16))
+        self.assertEqual([step["loop_valid"] for step in padded["steps"] if step["id"] == "mma"], [16, 3])
+        tile = next(tile for tile in padded["tiles"] if tile["coords"] == [1, 1])
+        self.assertEqual(tile["valid_cells"], 11 * 5)
+        self.assertEqual(tile["bounds"][0]["end"], 27)
+        self.assertEqual(tile["bounds"][1]["end"], 21)
+        self.assertEqual([address["samples"][1]["offset"] for address in tile["addresses"]],
+                         [16 * 19 + 16, 16 * 21 + 16, 16 * 21 + 16])
+
+    def test_gemm_view_rejects_wrong_loop_or_source_ref(self):
+        document = json.loads((EXAMPLES / "cuda_tensor_core_gemm.json").read_text())
+        document["source"]["path"] = str(EXAMPLES / "sources/cuda_tensor_core_gemm.cu")
+        def invalid(mutate, message):
+            candidate = json.loads(json.dumps(document))
+            mutate(candidate)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "model.json"
+                path.write_text(json.dumps(candidate))
+                with self.assertRaisesRegex(ValidationError, message):
+                    validate_model(path)
+        invalid(lambda doc: doc["mapping"]["gemm_view"].update(k_size="8"), "K slices do not match")
+        invalid(lambda doc: doc["mapping"]["gemm_view"]["source_refs"].update(mma="missing"),
+                "missing source evidence ref")
+
     def test_optional_chinese_labels_reach_viewer_model(self):
         model, _ = validate_model(EXAMPLES / "cuda_tiled_gemm.json")
         self.assertEqual(model["title_zh"], "CUDA C++ · 分块矩阵乘法")

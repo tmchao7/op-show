@@ -11,7 +11,16 @@ python3 -m op_show validate examples/cuda_tiled_gemm.json
 python3 -m op_show serve examples --no-browser
 ```
 
-Open the printed local URL. The operator menu switches between native CUDA C++ GEMM, CUDA Triton matmul, a Triton-Ascend vector add, and the v2 QKV All-to-All task trace. Each has an aligned case and a tail/padding case. Omit `--no-browser` to open the browser automatically.
+Open the printed local URL. The operator menu includes native CUDA C++ GEMM, CUDA Tensor Core WMMA GEMM, CUDA Triton matmul, a Triton-Ascend vector add, and the v2 QKV All-to-All task trace. Each has an aligned case and a tail/padding case. Omit `--no-browser` to open the browser automatically.
+
+To inspect the Tensor Core example directly:
+
+```sh
+python3 -m op_show validate examples/cuda_tensor_core_gemm.json
+python3 -m op_show serve examples/cuda_tensor_core_gemm.json
+```
+
+Select a C tile and step through A/B staging, WMMA fragment load, Tensor Core MMA, and masked output. The A × B → C panel shows the current K slice, valid cells, and zero-filled tails. This is a source-backed logical illustration; the repository does not execute CUDA code without a CUDA toolkit and GPU. The source is under `examples/sources/cuda_tensor_core_gemm.cu`, and the design research is in [the Tensor Core GEMM note](docs/research-tensor-core-gemm.md).
 
 The QKV trace links four views: Producer block × target rank/head group, PID claims, a peer_mem path, and Consumer source rank/block × head group output. Select a task to follow its Q/K/V offsets, signal slot, source lines, and logical event order. The example uses four ranks and 32 AIVs with `S=1344` or `S=1300`; these are illustrative inputs, not measured hardware traces. The second case masks 44 tokens in the final 112-token block.
 
@@ -51,6 +60,7 @@ In v2, each tick completes every event whose dependencies have been satisfied at
 ```sh
 python3 -m unittest discover -s tests -v
 node --check op_show/web/app.js
+node --check op_show/web/trace.js
 ```
 
 The example CUDA/Triton sources are readable illustrations of the declared mapping. They are not compiled or executed in this hardware-free environment.

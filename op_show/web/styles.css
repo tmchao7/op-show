@@ -490,3 +490,30 @@ footer span { margin: 0 9px; color: #bda895; }
   .trace-matrix-scroll { margin: 0 10px 16px; }
 }
 @media (min-width: 621px) { .trace-panel.trace-tab-hidden { display: block; } }
+
+/* Optional GEMM input/output slice view for source-backed v1 models. */
+.gemm-phase { padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--panel-soft); color: var(--primary-deep); font: 700 10px var(--mono); }
+.gemm-matrices { display: grid; grid-template-columns: minmax(0,1fr) 15px minmax(0,1fr) 15px minmax(0,1fr); align-items: center; gap: 4px; padding: 4px 19px 18px; }
+.gemm-matrix-card { min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 8px; background: #fbf6ef; transition: box-shadow .18s, border-color .18s; }
+.gemm-matrix-card.a { --matrix: #c0785b; --matrix-soft: #f0c9b5; }
+.gemm-matrix-card.b { --matrix: #65918d; --matrix-soft: #c6e0dc; }
+.gemm-matrix-card.c { --matrix: #758d5c; --matrix-soft: #d4e2bd; }
+.gemm-matrix-card.focused { border-color: var(--matrix); box-shadow: 0 0 0 2px var(--matrix-soft); }
+.gemm-matrix-top { display: flex; justify-content: space-between; gap: 5px; align-items: center; color: var(--matrix); }
+.gemm-matrix-top strong { font: 800 20px var(--mono); }
+.gemm-matrix-top button { padding: 3px; border: 0; background: transparent; color: var(--primary-deep); font: 600 9px var(--mono); }
+.gemm-matrix-top button:hover { text-decoration: underline; }
+.gemm-matrix-range { overflow: hidden; margin: 5px 0 8px; color: var(--soft); font: 600 9px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.gemm-cell-grid { display: grid; gap: 2px; width: 100%; aspect-ratio: 1; }
+.gemm-cell { min-width: 0; min-height: 0; border: 1px solid var(--matrix); border-radius: 1px; background: var(--matrix-soft); }
+.gemm-cell.masked { border-color: #c2a97d; background: repeating-linear-gradient(-45deg, #fae8c9 0 2px, #fffaf1 2px 4px); }
+.gemm-matrix-valid { margin-top: 8px; color: var(--soft); font: 600 9px var(--mono); }
+.gemm-operator { color: var(--primary); font: 700 18px var(--mono); text-align: center; }
+@media (max-width: 900px) { .gemm-matrices { padding: 4px 14px 18px; } }
+@media (max-width: 620px) {
+  .gemm-matrices { grid-template-columns: 1fr; gap: 7px; justify-items: center; }
+  .gemm-matrix-card { width: min(100%, 280px); }
+  .gemm-cell-grid { width: min(100%, 220px); margin: auto; }
+  .gemm-operator { transform: rotate(90deg); }
+}
+@media (prefers-reduced-motion: reduce) { .gemm-matrix-card { transition: none; } }
