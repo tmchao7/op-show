@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "title": "Triton-Ascend · Vector Add",
+  "title_zh": "Triton-Ascend · 向量加法",
+  "backend": "triton-ascend",
+  "source": {
+    "path": "sources/triton_ascend_add.py",
+    "kernel": "add_kernel",
+    "refs": {
+      "grid": {"line": 20, "contains": "grid = (triton.cdiv(N, BLOCK),)"},
+      "tile": {"line": 10, "contains": "offsets = pid * BLOCK + tl.arange(0, BLOCK)"},
+      "load": {"line": 12, "contains": "tl.load(X + offsets"},
+      "compute": {"line": 14, "contains": "z = x + y"},
+      "store": {"line": 15, "contains": "tl.store(Z + offsets"}
+    }
+  },
+  "mapping": {
+    "status": "source-backed",
+    "note": "This shows the Triton program-level mapping used by the Ascend target; no NPU scheduling is inferred.",
+    "note_zh": "展示 Ascend 后端的 Triton program 级映射；不推断 NPU 的实际调度。",
+    "grid_source_ref": "grid",
+    "worker_labels": {"x": "tl.program_id(0)"},
+    "worker_grid": {"x": "ceildiv(N, BLOCK)"},
+    "tile_axes": [
+      {"name": "I", "extent": "N", "size": "BLOCK", "index": "wid_x", "source_ref": "tile"}
+    ],
+    "program": [
+      {"steps": [
+        {"id": "load", "label": "Load X/Y", "label_zh": "加载 X/Y", "source_ref": "load"},
+        {"id": "compute", "label": "Add elements", "label_zh": "逐元素相加", "source_ref": "compute"},
+        {"id": "store", "label": "Store Z", "label_zh": "写回 Z", "source_ref": "store"}
+      ]}
+    ],
+    "addresses": [
+      {"label": "X/Y/Z first element offset", "label_zh": "X/Y/Z 首元素偏移", "expr": "i", "sample": {"i": "tile_I * BLOCK"}, "source_ref": "tile"}
+    ],
+    "dependencies": []
+  },
+  "scenarios": [
+    {"id": "aligned", "label": "Aligned · no tail", "label_zh": "整除 · 无尾 tile", "params": {"N": 16, "BLOCK": 8}},
+    {"id": "padded", "label": "Padded · tail tile", "label_zh": "非整除 · 尾 tile", "params": {"N": 13, "BLOCK": 8}}
+  ]
+}

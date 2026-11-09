@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#fbf7f1">
+    <title>OP/SHOW — 算子 Tile 执行图解</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">▦</span><span>OP<span class="brand-slash">/</span>SHOW</span></div>
+        <div class="topbar-right"><span class="topbar-caption" data-i18n="topCaption">无需硬件的算子图解</span><div class="language-switch" role="group" aria-label="语言 / Language"><button type="button" data-lang="zh" aria-pressed="true">中文</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div><span class="live-dot"></span><span data-i18n="local">本地</span></div>
+      </header>
+
+      <main>
+        <section class="intro">
+          <div>
+            <div class="eyebrow" data-i18n="eyebrow">源码 → TILE 映射 → 执行</div>
+            <h1><span data-i18n="heroLead">看清每个 tile</span> <em data-i18n="heroAccent">如何工作。</em></h1>
+            <p data-i18n="intro">从 program 或 block ID 找到它负责的数据，再逐步查看哪些 tile 可以并行、哪些阶段必须依次执行。</p>
+          </div>
+          <div class="intro-note"><span class="note-icon">◎</span><div><strong data-i18n="logical">逻辑执行进度</strong><span data-i18n="logicalNote">无依赖的 tile 同时推进。时间轴展示依赖关系，不代表设备耗时。</span></div></div>
+        </section>
+
+        <section class="control-bar" aria-label="可视化设置" data-i18n-aria-label="settings">
+          <label class="field"><span data-i18n="operator">算子</span><select id="model-select"></select></label>
+          <div class="field scenario-field"><span data-i18n="inputShape">输入形状</span><div class="segmented" id="scenario-switch"></div></div>
+          <div class="backend-pill" id="backend-pill"></div>
+        </section>
+
+        <section class="metric-row" id="metrics" aria-label="模型统计" data-i18n-aria-label="statistics"></section>
+
+        <div id="unknown-panel" hidden></div>
+        <section id="visualization" class="workspace">
+          <div class="main-column">
+            <section class="panel tile-panel">
+              <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionTiles">01 / TILE 归属</div><h2 data-i18n="tileGrid">输出 tile 网格</h2></div><div class="legend"><span><i class="legend-dot pending"></i><span data-i18n="pending">待执行</span></span><span><i class="legend-dot running"></i><span data-i18n="active">进行中</span></span><span><i class="legend-dot done"></i><span data-i18n="complete">已完成</span></span><span><i class="legend-dot pad"></i><span data-i18n="tailMasked">尾部 / mask</span></span></div></div>
+              <div class="grid-context" id="grid-context"></div>
+              <div class="tile-grid-wrap"><div id="tile-grid" class="tile-grid" role="group" aria-label="输出 tile" data-i18n-aria-label="outputTiles"></div></div>
+              <div class="grid-footer" id="grid-footer"></div>
+            </section>
+
+            <section class="panel playback-panel">
+              <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionExecution">02 / 理想化执行</div><h2 data-i18n="parallelTitle">无依赖的 tile 同时推进</h2></div><span class="progress-count" id="progress-count">0%</span></div>
+              <div class="playback-controls">
+                <button class="icon-button" id="reset-button" title="重置" aria-label="重置" data-i18n-title="reset" data-i18n-aria-label="reset">↺</button>
+                <button class="play-button" id="play-button" aria-label="播放">▶ <span>播放</span></button>
+                <button class="icon-button" id="step-button" title="单步前进" aria-label="单步前进" data-i18n-title="stepForward" data-i18n-aria-label="stepForward">→</button>
+                <input id="scrubber" class="scrubber" type="range" min="0" max="1" value="0" aria-label="执行进度" data-i18n-aria-label="executionProgress">
+                <span class="tick-label" id="tick-label">0 / 0</span>
+                <label class="speed-control"><span data-i18n="speed">速度</span><select id="speed-select"><option value="1100">0.5×</option><option value="650" selected>1×</option><option value="320">2×</option></select></label>
+              </div>
+              <div class="stage-heading"><span><span data-i18n="stageSequence">阶段顺序</span> <small data-i18n="serialWithinTile">tile 内依次执行</small></span><span id="current-stage"></span></div>
+              <div class="stage-strip" id="stage-strip"></div>
+              <p class="playback-footnote" data-i18n="progressNote">进度按已完成的 tile 阶段计算，不代表实际耗时或 GPU/NPU 利用率。</p>
+            </section>
+          </div>
+
+          <aside class="panel inspector-panel">
+            <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionInspector">03 / 详情</div><h2 id="inspector-title">Tile 详情</h2></div><span class="inspector-glyph">⌖</span></div>
+            <div id="inspector-content"></div>
+          </aside>
+        </section>
+
+        <section id="source-panel" class="panel source-panel">
+          <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionSource">04 / 源码依据</div><h2 data-i18n="sourceTitle">映射依据来自哪里</h2></div><span id="source-path" class="source-path"></span></div>
+          <div class="source-layout"><div class="source-explainer" id="source-explainer"></div><div class="code-scroll"><pre id="source-code"></pre></div></div>
+        </section>
+      </main>
+      <footer>OP/SHOW <span>·</span> <span data-i18n="footerWalkthrough">基于源码的逻辑图解</span> <span>·</span> <span data-i18n="footerNoExecution">页面不会执行算子源码</span></footer>
+    </div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

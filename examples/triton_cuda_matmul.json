@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "title": "Triton CUDA · Matmul",
+  "title_zh": "Triton CUDA · 矩阵乘法",
+  "backend": "triton-cuda",
+  "source": {
+    "path": "sources/triton_cuda_matmul.py",
+    "kernel": "matmul_kernel",
+    "refs": {
+      "grid": {"line": 34, "contains": "triton.cdiv(M, BM) * triton.cdiv(N, BN)"},
+      "tile_m": {"line": 12, "contains": "tile_m = pid // tiles_n"},
+      "tile_n": {"line": 13, "contains": "tile_n = pid % tiles_n"},
+      "loop": {"line": 19, "contains": "range(tl.cdiv(K, BK))"},
+      "load": {"line": 22, "contains": "tl.load(a_ptrs"},
+      "compute": {"line": 26, "contains": "acc += tl.dot(a, b)"},
+      "store": {"line": 29, "contains": "tl.store(c_ptrs"},
+      "a_address": {"line": 20, "contains": "A + rows[:, None] * K"},
+      "b_address": {"line": 21, "contains": "B + (k0 * BK + ks[:, None]) * N"},
+      "c_address": {"line": 28, "contains": "C + rows[:, None] * N"}
+    }
+  },
+  "mapping": {
+    "status": "source-backed",
+    "note": "Each program ID maps to one output tile. K slices execute serially inside each program.",
+    "note_zh": "每个 program ID 映射到一个输出 tile；同一 program 内的 K 分片依次执行。",
+    "grid_source_ref": "grid",
+    "worker_labels": {"x": "tl.program_id(0)"},
+    "worker_grid": {"x": "ceildiv(M, BM) * ceildiv(N, BN)"},
+    "tile_axes": [
+      {"name": "M", "extent": "M", "size": "BM", "index": "wid_x // ceildiv(N, BN)", "source_ref": "tile_m"},
+      {"name": "N", "extent": "N", "size": "BN", "index": "wid_x % ceildiv(N, BN)", "source_ref": "tile_n"}
+    ],
+    "program": [
+      {"repeat": "ceildiv(K, BK)", "loop_axis": "K", "loop_tile": "BK", "loop_source_ref": "loop", "steps": [
+        {"id": "load", "label": "Load A/B tile", "label_zh": "加载 A/B tile", "source_ref": "load"},
+        {"id": "compute", "label": "tl.dot accumulate", "label_zh": "tl.dot 累加", "source_ref": "compute"}
+      ]},
+      {"steps": [{"id": "store", "label": "Store C tile", "label_zh": "写回 C tile", "source_ref": "store"}]}
+    ],
+    "addresses": [
+      {"label": "A first element offset", "label_zh": "A 首元素偏移", "expr": "row * K + k", "sample": {"row": "tile_M * BM", "k": "phase * BK"}, "source_ref": "a_address"},
+      {"label": "B first element offset", "label_zh": "B 首元素偏移", "expr": "k * N + col", "sample": {"k": "phase * BK", "col": "tile_N * BN"}, "source_ref": "b_address"},
+      {"label": "C first element offset", "label_zh": "C 首元素偏移", "expr": "row * N + col", "sample": {"row": "tile_M * BM", "col": "tile_N * BN"}, "source_ref": "c_address"}
+    ],
+    "dependencies": []
+  },
+  "scenarios": [
+    {"id": "aligned", "label": "Aligned · no tail", "label_zh": "整除 · 无尾 tile", "params": {"M": 32, "N": 32, "K": 32, "BM": 16, "BN": 16, "BK": 16}},
+    {"id": "padded", "label": "Padded · M/N/K tails", "label_zh": "非整除 · M/N/K 尾部", "params": {"M": 31, "N": 29, "K": 27, "BM": 16, "BN": 16, "BK": 16}}
+  ]
+}
