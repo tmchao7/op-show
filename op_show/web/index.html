@@ -64,6 +64,23 @@
           </aside>
         </section>
 
+        <section id="trace-visualization" class="trace-workspace" hidden>
+          <div class="trace-toolbar panel">
+            <div><div class="section-kicker" data-i18n="traceHeading">01 / 数据如何流动</div><h2 data-i18n="traceTitle">从 Producer Tile 到 Consumer 输出</h2><p id="trace-note"></p></div>
+            <div class="trace-pickers"><label><span data-i18n="sourceRank">来源 Rank</span><select id="trace-source-rank"></select></label><label><span data-i18n="targetRank">目标 Rank</span><select id="trace-target-rank"></select></label><label><span data-i18n="tensor">输出张量</span><select id="trace-tensor"><option>Q</option><option>K</option><option>V</option></select></label></div>
+          </div>
+          <div class="trace-legend" id="trace-legend"></div>
+          <div class="trace-tabs" role="tablist" aria-label="Trace views"><button data-trace-tab="producer" role="tab" aria-selected="true" data-i18n="producerMatrix">Producer 数据矩阵</button><button data-trace-tab="claim" role="tab" aria-selected="false" data-i18n="claimTable">PID 认领表</button><button data-trace-tab="path" role="tab" aria-selected="false" data-i18n="peerPath">peer_mem 数据路径</button><button data-trace-tab="consumer" role="tab" aria-selected="false" data-i18n="consumerMatrix">Consumer 输出矩阵</button></div>
+          <div class="trace-views">
+            <section class="panel trace-panel" data-trace-view="producer"><div class="panel-head"><div><div class="section-kicker">02 / PRODUCER</div><h2 data-i18n="producerMatrix">Producer 数据矩阵</h2></div></div><p class="trace-description" data-i18n="producerHint">行是 block，列是目标 Rank 与 head group；颜色区分 G0–G4。</p><div class="trace-matrix-scroll"><div id="trace-producer"></div></div></section>
+            <section class="panel trace-panel" data-trace-view="claim"><div class="panel-head"><div><div class="section-kicker">03 / PID</div><h2 data-i18n="claimTable">PID 认领表</h2></div></div><p class="trace-description" data-i18n="claimHint">每行一个 Producer PID；每列是本 Wave 中按步长 16 认领的任务。</p><div class="trace-matrix-scroll"><div id="trace-claims"></div></div></section>
+            <section class="panel trace-panel" data-trace-view="path"><div class="panel-head"><div><div class="section-kicker">04 / PEER_MEM</div><h2 data-i18n="peerPath">peer_mem 数据路径</h2></div></div><div id="trace-path"></div></section>
+            <section class="panel trace-panel" data-trace-view="consumer"><div class="panel-head"><div><div class="section-kicker">05 / CONSUMER</div><h2 data-i18n="consumerMatrix">Consumer 输出矩阵</h2></div></div><p class="trace-description" data-i18n="consumerHint">行是来源 Rank 与 block，列是 head group；Q/K/V 使用相同坐标。</p><div class="trace-matrix-scroll"><div id="trace-consumer"></div></div></section>
+          </div>
+          <section class="panel trace-player"><div class="panel-head"><div><div class="section-kicker">06 / WAVE</div><h2 data-i18n="logicalEvents">逻辑事件与依赖</h2></div><span class="progress-count" id="trace-percent">0%</span></div><div class="trace-wave-row" id="trace-waves"></div><div class="playback-controls"><button class="icon-button" id="trace-reset" aria-label="重置">↺</button><button class="icon-button" id="trace-prev" aria-label="上一步">←</button><button class="play-button" id="trace-play">▶ <span>播放</span></button><button class="icon-button" id="trace-next" aria-label="下一步">→</button><input id="trace-scrubber" class="scrubber" type="range" min="0" value="0" aria-label="逻辑进度"><span class="tick-label" id="trace-tick">0 / 0</span></div><div id="trace-event-strip" class="trace-event-strip"></div><p class="playback-footnote" data-i18n="traceTiming">每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。</p></section>
+          <section class="panel trace-detail"><div class="panel-head"><div><div class="section-kicker">07 / TILE</div><h2 id="trace-detail-title"></h2></div></div><div id="trace-detail-body"></div></section>
+        </section>
+
         <section id="source-panel" class="panel source-panel">
           <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionSource">04 / 源码依据</div><h2 data-i18n="sourceTitle">映射依据来自哪里</h2></div><span id="source-path" class="source-path"></span></div>
           <div class="source-layout"><div class="source-explainer" id="source-explainer"></div><div class="code-scroll"><pre id="source-code"></pre></div></div>
@@ -71,6 +88,7 @@
       </main>
       <footer>OP/SHOW <span>·</span> <span data-i18n="footerWalkthrough">基于源码的逻辑图解</span> <span>·</span> <span data-i18n="footerNoExecution">页面不会执行算子源码</span></footer>
     </div>
+    <script src="/trace.js" defer></script>
     <script src="/app.js" defer></script>
   </body>
 </html>

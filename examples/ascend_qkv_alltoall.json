@@ -1,0 +1,245 @@
+{
+  "schema_version": 2,
+  "title": "Triton-Ascend · QKV All-to-All task trace",
+  "title_zh": "Triton-Ascend · QKV All-to-All 任务轨迹",
+  "backend": "triton-ascend",
+  "source": {
+    "path": "sources/ascend_qkv_all2all.py",
+    "kernel": "kernel_qkv_fuse_a2a_head_grouped",
+    "refs": {
+      "block_s": {
+        "line": 32,
+        "contains": "COMM_BLOCK_S = 112"
+      },
+      "block_d": {
+        "line": 36,
+        "contains": "COMM_BLOCK_D = 128"
+      },
+      "signal_stride": {
+        "line": 41,
+        "contains": "SIGNAL_SLOT_STRIDE = 16"
+      },
+      "role": {
+        "line": 588,
+        "contains": "producers_before = ("
+      },
+      "wave": {
+        "line": 600,
+        "contains": "for wave_start in range(0, num_blocks, S_WAVE)"
+      },
+      "total_tasks": {
+        "line": 602,
+        "contains": "total_wave_tasks = rank_size * HEAD_GROUPS * S_WAVE"
+      },
+      "producer_loop": {
+        "line": 608,
+        "contains": "logical_core_id, total_wave_tasks, PRODUCER_CORES"
+      },
+      "lane": {
+        "line": 610,
+        "contains": "lane = flat_idx % S_WAVE"
+      },
+      "task_idx": {
+        "line": 611,
+        "contains": "task_idx = flat_idx // S_WAVE"
+      },
+      "target": {
+        "line": 612,
+        "contains": "target_rank = task_idx % rank_size"
+      },
+      "group": {
+        "line": 613,
+        "contains": "head_group = task_idx // rank_size"
+      },
+      "block": {
+        "line": 614,
+        "contains": "block_id = wave_start + lane"
+      },
+      "mask": {
+        "line": 620,
+        "contains": "row_mask = offs_s < sequence_length"
+      },
+      "load": {
+        "line": 639,
+        "contains": "q_data = tl.load("
+      },
+      "local": {
+        "line": 661,
+        "contains": "if target_rank == rank"
+      },
+      "direct": {
+        "line": 665,
+        "contains": "tl.store("
+      },
+      "peer": {
+        "line": 685,
+        "contains": "peer_base = ("
+      },
+      "peer_store": {
+        "line": 693,
+        "contains": "tl.store("
+      },
+      "fence": {
+        "line": 714,
+        "contains": "libshmem_device.fence()"
+      },
+      "signal": {
+        "line": 725,
+        "contains": "signal_slot = ("
+      },
+      "notify": {
+        "line": 731,
+        "contains": "dl.notify("
+      },
+      "consumer_loop": {
+        "line": 741,
+        "contains": "logical_core_id, total_wave_tasks, CONSUMER_CORES"
+      },
+      "source_rank": {
+        "line": 745,
+        "contains": "source_rank = task_idx % rank_size"
+      },
+      "output_row": {
+        "line": 754,
+        "contains": "output_row = source_rank * sequence_length + offs_s"
+      },
+      "wait": {
+        "line": 768,
+        "contains": "token = dl.wait("
+      },
+      "consume": {
+        "line": 776,
+        "contains": "local_peer_ptr = dl.consume_token("
+      },
+      "output_store": {
+        "line": 810,
+        "contains": "tl.store("
+      },
+      "s_wave": {
+        "line": 895,
+        "contains": "s_wave = 4 if rank_size <= 6"
+      },
+      "head_groups": {
+        "line": 930,
+        "contains": "head_groups = math.ceil(heads_per_rank / group_size)"
+      },
+      "strides": {
+        "line": 910,
+        "contains": "q.stride(0)"
+      },
+      "input_offset": {
+        "line": 642,
+        "contains": "+ (input_head_base + head) * stride_a_h"
+      },
+      "output_offset": {
+        "line": 809,
+        "contains": "output_offs = output_base + head * stride_out_h"
+      }
+    }
+  },
+  "mapping": {
+    "status": "source-backed",
+    "note": "Illustrative source-backed logical trace with contiguous Q/K/V and output tensors; 32 AIVs and sequence lengths are example inputs, not device measurements.",
+    "note_zh": "基于源码的逻辑轨迹，示例 Q/K/V 与输出张量采用连续布局；32 个 AIV 和序列长度是示例参数，不是设备测量结果。"
+  },
+  "trace": {
+    "kind": "qkv-head-grouped",
+    "refs": {
+      "role": "role",
+      "wave": "wave",
+      "producer_loop": "producer_loop",
+      "consumer_loop": "consumer_loop",
+      "load": "load",
+      "local": "local",
+      "direct": "direct",
+      "peer_store": "peer_store",
+      "fence": "fence",
+      "notify": "notify",
+      "wait": "wait",
+      "consume": "consume",
+      "output_store": "output_store"
+    },
+    "formulas": {
+      "lane": "flat_idx % s_wave",
+      "task_idx": "flat_idx // s_wave",
+      "peer_rank": "task_idx % rank_size",
+      "head_group": "task_idx // rank_size",
+      "block_id": "wave_start + lane",
+      "consumer_flat_idx": "head_group * rank_size * s_wave + source_rank * s_wave + lane",
+      "signal_slot": "((block_id % buffer_num) * rank_size + source_rank) * head_groups + head_group",
+      "signal_offset": "signal_slot * signal_stride",
+      "output_row": "source_rank * sequence_length + block_id * block_s",
+      "peer_q": "(block_id % buffer_num) * block_slot_size + source_rank * fused_heads * peer_head_size + head_start * peer_head_size",
+      "peer_k": "peer_q + heads_per_rank * peer_head_size",
+      "peer_v": "peer_q + 2 * heads_per_rank * peer_head_size",
+      "input_offset": "block_id * block_s * stride_a_s + (target_rank * heads_per_rank + head_start) * stride_a_h",
+      "output_offset": "output_row * stride_out_s + head_start * stride_out_h"
+    },
+    "formula_refs": {
+      "lane": "lane",
+      "task_idx": "task_idx",
+      "peer_rank": "target",
+      "head_group": "group",
+      "block_id": "block",
+      "consumer_flat_idx": "source_rank",
+      "signal_slot": "signal",
+      "signal_offset": "notify",
+      "output_row": "output_row",
+      "peer_q": "peer",
+      "peer_k": "peer",
+      "peer_v": "peer",
+      "input_offset": "input_offset",
+      "output_offset": "output_offset"
+    }
+  },
+  "scenarios": [
+    {
+      "id": "aligned",
+      "label": "S=1344 · three full waves",
+      "label_zh": "S=1344 · 三个完整 Wave",
+      "params": {
+        "sequence_length": 1344,
+        "rank_size": 4,
+        "heads_per_rank": 20,
+        "total_cores": 32,
+        "producer_cores": 16,
+        "consumer_cores": 16,
+        "s_wave": 4,
+        "block_s": 112,
+        "block_d": 128,
+        "heads_per_group": 4,
+        "signal_stride": 16,
+        "stride_a_s": 10240,
+        "stride_a_h": 128,
+        "stride_a_d": 1,
+        "stride_out_s": 2560,
+        "stride_out_h": 128,
+        "stride_out_d": 1
+      }
+    },
+    {
+      "id": "padded",
+      "label": "S=1300 · masked tail",
+      "label_zh": "S=1300 · 尾部 Mask",
+      "params": {
+        "sequence_length": 1300,
+        "rank_size": 4,
+        "heads_per_rank": 20,
+        "total_cores": 32,
+        "producer_cores": 16,
+        "consumer_cores": 16,
+        "s_wave": 4,
+        "block_s": 112,
+        "block_d": 128,
+        "heads_per_group": 4,
+        "signal_stride": 16,
+        "stride_a_s": 10240,
+        "stride_a_h": 128,
+        "stride_a_d": 1,
+        "stride_out_s": 2560,
+        "stride_out_h": 128,
+        "stride_out_d": 1
+      }
+    }
+  ]
+}

@@ -35,7 +35,8 @@ const translations = {
     noAddress: '未提供地址示例。', sourceEvidence: '依据，不是执行结果',
     sourceExplanation: '这些代码行与本地源码逐字对应。公式由 agent 提出，校验器检查描述与覆盖范围。使用前请对照源码复核公式。',
     mappingUnknown: '映射未知：{note}。已禁用播放。', loadError: '无法加载描述或源码',
-    catalogError: '无法加载算子列表', pageTitle: 'OP/SHOW — 算子 Tile 执行图解'
+    catalogError: '无法加载算子列表', pageTitle: 'OP/SHOW — 算子 Tile 执行图解',
+    traceHeading: '01 / 数据如何流动', traceTitle: '从 Producer Tile 到 Consumer 输出', sourceRank: '来源 Rank', targetRank: '目标 Rank', tensor: '输出张量', producerMatrix: 'Producer 数据矩阵', claimTable: 'PID 认领表', peerPath: 'peer_mem 数据路径', consumerMatrix: 'Consumer 输出矩阵', producerHint: '行是 block，列是目标 Rank 与 head group；颜色区分 G0–G4。', claimHint: '每行一个 Producer PID；每列是本 Wave 中按步长 16 认领的任务。', consumerHint: '行是来源 Rank 与 block，列是 head group；Q/K/V 使用相同坐标。', logicalEvents: '逻辑事件与依赖', traceTiming: '每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。'
   },
   en: {
     topCaption: 'HARDWARE-FREE KERNEL WALKTHROUGH', local: 'LOCAL',
@@ -68,7 +69,8 @@ const translations = {
     noAddress: 'No address sample provided.', sourceEvidence: 'Evidence, not execution',
     sourceExplanation: 'These lines are literal matches to the local source. The agent proposes the formulas; the validator checks the model and coverage. Review the formulas against the source before relying on them.',
     mappingUnknown: 'Mapping unknown: {note}. Playback is disabled.', loadError: 'Could not load model or source',
-    catalogError: 'Could not load catalog', pageTitle: 'OP/SHOW — Tile execution explorer'
+    catalogError: 'Could not load catalog', pageTitle: 'OP/SHOW — Tile execution explorer',
+    traceHeading: '01 / DATA FLOW', traceTitle: 'Producer tiles to Consumer output', sourceRank: 'SOURCE RANK', targetRank: 'TARGET RANK', tensor: 'OUTPUT TENSOR', producerMatrix: 'Producer data matrix', claimTable: 'PID claim table', peerPath: 'peer_mem data path', consumerMatrix: 'Consumer output matrix', producerHint: 'Rows are blocks; columns are target ranks and head groups. G0–G4 colors identify data groups.', claimHint: 'Each row is one Producer PID; columns show stride-16 claims in this wave.', consumerHint: 'Rows are source ranks and blocks; columns are head groups. Q/K/V share coordinates.', logicalEvents: 'Logical events and dependencies', traceTiming: 'Each step completes all events with satisfied dependencies. A wave is not a global PID barrier or device time.'
   }
 };
 
@@ -189,6 +191,7 @@ function setLanguage(language) {
   applyLanguage();
   renderCatalog();
   syncPlayButton();
+  if (state.model?.schema_version === 2) TraceView.render();
   render();
 }
 
@@ -298,8 +301,9 @@ function renderInspector() {
 
 function renderSource() {
   const scenario = currentScenario();
-  const step = scenario ? activeStep() : null;
-  const refKey = step?.source_ref || state.model.grid_source_ref || Object.keys(state.model.refs)[0];
+  const step = scenario && state.model.schema_version !== 2 ? activeStep() : null;
+  const refKey = state.model.schema_version === 2 && state.model.status !== 'unknown' ? TraceView.currentRef() :
+    (step?.source_ref || state.model.grid_source_ref || Object.keys(state.model.refs)[0]);
   const highlighted = state.highlightedRef || refKey;
   const line = state.model.refs[highlighted]?.line;
   $('source-path').textContent = state.model.source_path;
@@ -317,7 +321,9 @@ function render() {
   if (!state.model) return;
   $('backend-pill').textContent = backendLabel(state.model.backend);
   const unknown = state.model.status === 'unknown';
-  $('visualization').hidden = unknown;
+  const trace = state.model.schema_version === 2;
+  $('visualization').hidden = unknown || trace;
+  $('trace-visualization').hidden = unknown || !trace;
   $('metrics').hidden = unknown;
   $('unknown-panel').hidden = !unknown;
   if (unknown) {
@@ -327,6 +333,7 @@ function render() {
     return;
   }
   renderScenarioSwitch();
+  if (trace) { TraceView.render(); renderSource(); return; }
   renderMetrics();
   renderGrid();
   renderPlayback();
@@ -336,6 +343,7 @@ function render() {
 
 async function loadModel(index) {
   pause();
+  TraceView.pause();
   const [modelResponse, sourceResponse] = await Promise.all([
     fetch(`/models/${index}.json`), fetch(`/sources/${index}.txt`)
   ]);
@@ -343,10 +351,18 @@ async function loadModel(index) {
   state.model = await modelResponse.json();
   state.source = await sourceResponse.text();
   state.scenario = state.model.scenarios[0]?.id || null;
-  state.selected = state.model.scenarios[0]?.tiles[0] ? tileKey(state.model.scenarios[0].tiles[0]) : null;
+  state.selected = state.model.schema_version === 2 ? null :
+    (state.model.scenarios[0]?.tiles[0] ? tileKey(state.model.scenarios[0].tiles[0]) : null);
   state.tick = 0;
   state.highlightedRef = null;
   $('model-select').value = String(index);
+  if (state.model.schema_version === 2 && state.model.status !== 'unknown') {
+    TraceView.init(state.model, currentScenario(), (ref, scroll) => {
+      state.highlightedRef = ref;
+      renderSource();
+      if (scroll) $('source-panel').scrollIntoView({behavior:'smooth', block:'start'});
+    }, () => state.language);
+  }
   render();
 }
 
@@ -376,7 +392,8 @@ $('scenario-switch').addEventListener('click', (event) => {
   if (!button) return;
   pause();
   state.scenario = button.dataset.scenario;
-  state.selected = tileKey(currentScenario().tiles[0]);
+  if (state.model.schema_version === 2) TraceView.scenarioChange(currentScenario());
+  else state.selected = tileKey(currentScenario().tiles[0]);
   state.tick = 0;
   state.highlightedRef = null;
   render();

@@ -20,6 +20,7 @@ def _handler(entries):
     files = {
         "/": ("text/html; charset=utf-8", (WEB / "index.html").read_bytes()),
         "/app.js": ("text/javascript; charset=utf-8", (WEB / "app.js").read_bytes()),
+        "/trace.js": ("text/javascript; charset=utf-8", (WEB / "trace.js").read_bytes()),
         "/styles.css": ("text/css; charset=utf-8", (WEB / "styles.css").read_bytes()),
         "/catalog.json": ("application/json; charset=utf-8", json.dumps(catalog).encode("utf-8")),
     }
@@ -86,8 +87,13 @@ def main(argv=None):
         if model["status"] == "unknown":
             print(f"Valid but not playable: {model['note']}")
         else:
-            summary = ", ".join(f"{s['id']}: {len(s['tiles'])} tiles, {len(s['steps'])} steps"
-                                for s in model["scenarios"])
+            if model.get("schema_version") == 2:
+                summary = ", ".join(
+                    f"{s['id']}: {len(s['tasks'])} tasks, {len(s['events'])} events, "
+                    f"{s['wave_count']} waves" for s in model["scenarios"])
+            else:
+                summary = ", ".join(f"{s['id']}: {len(s['tiles'])} tiles, {len(s['steps'])} steps"
+                                    for s in model["scenarios"])
             print(f"Valid source-backed model ({model['backend']}): {summary}")
         return 0
 

@@ -174,6 +174,9 @@ def validate_model(path):
     except (OSError, json.JSONDecodeError) as exc:
         raise ValidationError(f"cannot read model: {exc}") from exc
     _require(isinstance(document, dict), "model root must be an object")
+    if document.get("schema_version") == 2:
+        from .trace import validate_trace_model
+        return validate_trace_model(document, model_path)
     _require(document.get("schema_version") == 1, "schema_version must be 1")
     _require(document.get("backend") in BACKENDS, f"backend must be one of {', '.join(sorted(BACKENDS))}")
     _require(isinstance(document.get("title"), str) and document["title"], "title is required")
