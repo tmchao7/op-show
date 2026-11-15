@@ -29,6 +29,7 @@ Reduce/GEMV 截图使用 `M/ROWS=6、K=37`，选中第二个输出 tile 和第�
 ## Contents
 
 - [Quick start](#quick-start)
+- [把自己的算子交给 Agent](#把自己的算子交给-agent)
 - [What the viewer shows](#what-the-viewer-shows)
 - [Use it with an agent](#use-it-with-an-agent)
 - [Install the agent skill](#install-the-agent-skill)
@@ -69,6 +70,37 @@ If you want the `op-show` command, install the checkout once:
 python3 -m pip install -e .
 op-show serve examples --port 8765
 ```
+
+## 把自己的算子交给 Agent
+
+下面以 Codex 和一个本地 CUDA 算子为例。Codex、Claude Code 等 agent 都通过同一份 skill 和 CLI 工作；**OP/SHOW 本身不会自动读取或执行算子代码**。
+
+1. 克隆仓库，并把 skill 链接到 agent 的 skills 目录（只需安装一次）：
+
+   ```sh
+   git clone https://github.com/tmchao7/op-show.git ~/tools/op-show
+   mkdir -p ~/.codex/skills
+   ln -s ~/tools/op-show/skills/op-show ~/.codex/skills/op-show
+   ```
+
+   Claude Code 可把同一目录链接到 `~/.claude/skills/op-show`；不支持自动加载 skill 的 agent 可直接读取 `~/tools/op-show/skills/op-show/SKILL.md`。本仓库的 `AGENTS.md` 是维护 OP/SHOW 的开发规则，分析用户算子时使用上述 skill。
+
+2. 开一个新的 agent 会话，把**源码的绝对路径**发给它。若 launcher、shape 或 stride 定义在别的文件，也一并给出路径；若直接粘贴代码，先让 agent 将完整源码保存为本地文件，供模型引用。下面这段可以直接复制，再替换路径：
+
+   ```text
+   使用 op-show skill 分析 /绝对路径/你的算子.cu，以及对应的 launcher。
+   若 skill 没有自动加载，先读 ~/tools/op-show/skills/op-show/SKILL.md。
+   请从源码核对 launch/PID 如何认领输出 tile、输入依赖、K 循环、mask 和地址偏移。
+   在源码旁生成 你的算子.opshow.json，包含 aligned（整除）和 padded（尾 tile）两个小尺寸案例；
+   不确定的映射标为 unknown，不要猜测。
+   在 ~/tools/op-show 中运行 python3 -m op_show validate /绝对路径/你的算子.opshow.json，
+   修复校验错误后运行 python3 -m op_show serve /绝对路径/你的算子.opshow.json --no-browser。
+   保持本地服务运行，把终端打印的完整可视化网址发给我，并说明哪些关系需要人工复核。
+   ```
+
+3. Agent 会先读源码，再生成 JSON 描述、运行校验并启动本地网页。成功后终端会打印类似 `Open http://127.0.0.1:8765/`；在**同一台电脑**的浏览器打开该网址，就能切换尺寸、点击结果 tile、播放阶段并查看对应源码。若 8765 端口已占用，可让 agent 用 `--port 8766` 重启服务，并以实际打印的网址为准。关闭运行 `serve` 的终端后，网址就无法访问。
+
+想先看现成效果，可直接运行上面的 `python3 -m op_show serve examples --no-browser`，再从菜单选择 Tensor Core GEMM。详细安装方式与校验清单见下文 [Install the agent skill](#install-the-agent-skill) 和 [Use it with an agent](#use-it-with-an-agent)。
 
 ## What the viewer shows
 
@@ -115,7 +147,7 @@ Use /absolute/path/to/op-show/skills/op-show/SKILL.md.
 
 Build a v1 model with two scenarios:
 - aligned: M=32, N=32, K=32
-- tail: M=27, N=21, K=19
+- padded: M=27, N=21, K=19
 
 Use literal source line refs only. If a rule cannot be verified from the source,
 set mapping.status to "unknown" and explain what is missing.
@@ -178,6 +210,10 @@ Or open the GitHub page, choose **Code → Download ZIP**, and unzip it somewher
 Use the skills directory your agent scans. Common locations:
 
 ```sh
+# Codex
+mkdir -p ~/.codex/skills
+ln -s ~/tools/op-show/skills/op-show ~/.codex/skills/op-show
+
 # Claude Code
 mkdir -p ~/.claude/skills
 ln -s ~/tools/op-show/skills/op-show ~/.claude/skills/op-show
