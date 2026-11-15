@@ -11,6 +11,8 @@ const translations = {
     logical: '逻辑执行进度', logicalNote: '无依赖的 tile 同时推进。时间轴展示依赖关系，不代表设备耗时。',
     settings: '可视化设置', operator: '算子', inputShape: '输入形状', statistics: '模型统计',
     sectionTiles: '01 / TILE 归属', tileGrid: '输出 tile 网格', outputTiles: '输出 tile',
+    ownershipSection: '00 / LAUNCH · PID', ownershipTitle: '先看谁认领任务', ownershipNote: '同一 PID 内的任务按源码循环顺序执行；不同 PID 仅在没有声明依赖时可并行。这里不表示实际设备调度或耗时。',
+    launchGrid: 'Launch 网格', pidCount: '个 PID', taskCount: '个输出任务', claimsPerPid: '每 PID 认领', claimUnit: '认领单位', claimOrder: '源码循环顺序', claimReady: '可并行启动的 PID', claimSelected: '当前选中', claimSource: '查看认领源码', groupTasks: '{count} 个输出任务', groupPids: '{count} 个 PID 参与',
     pending: '待执行', active: '进行中', complete: '已完成', tailMasked: '尾部 / mask',
     sectionExecution: '02 / 理想化执行', parallelTitle: '无依赖的 tile 同时推进',
     reset: '重置', play: '播放', pause: '暂停', stepForward: '单步前进', executionProgress: '执行进度',
@@ -56,6 +58,8 @@ const translations = {
     logical: 'Logical execution', logicalNote: 'All independent tiles advance together. The timeline shows dependencies, not device timing.',
     settings: 'Visualization settings', operator: 'OPERATOR', inputShape: 'INPUT SHAPE', statistics: 'Model statistics',
     sectionTiles: '01 / TILE OWNERSHIP', tileGrid: 'Output tile grid', outputTiles: 'Output tiles',
+    ownershipSection: '00 / LAUNCH · PID', ownershipTitle: 'Who claims each task', ownershipNote: 'Claims within a PID follow source loop order. Different PIDs can advance together only when no dependency is declared. This is not device scheduling or elapsed time.',
+    launchGrid: 'Launch grid', pidCount: 'PIDs', taskCount: 'output tasks', claimsPerPid: 'Claims per PID', claimUnit: 'Claim unit', claimOrder: 'Source loop order', claimReady: 'PIDs ready in parallel', claimSelected: 'Selected', claimSource: 'View claim source', groupTasks: '{count} output tasks', groupPids: '{count} PIDs involved',
     pending: 'Pending', active: 'Active', complete: 'Complete', tailMasked: 'Tail / masked',
     sectionExecution: '02 / IDEAL EXECUTION', parallelTitle: 'All independent tiles advance together',
     reset: 'Reset', play: 'Play', pause: 'Pause', stepForward: 'Step forward', executionProgress: 'Execution progress',
@@ -152,6 +156,9 @@ function buildRefIndex(model) {
   } else {
     add(model.grid_source_ref, 'launch grid');
     const scenario = model.scenarios[0];
+    for (const ref of scenario?.claim_source_refs || []) add(ref, 'PID claim loop');
+    for (const ref of model.parallelism?.source_refs || []) add(ref, 'parallel strategy');
+    add(scenario?.task_group?.source_ref, 'task input group');
     for (const dimension of scenario?.dimensions || []) {
       add(dimension.source_ref, `axis ${dimension.name}`);
       add(dimension.size_ref, `size ${dimension.name}`);
@@ -190,7 +197,7 @@ function renderTimeline() {
   if (!scenario || state.model.schema_version === 2) { panel.hidden = true; return; }
   panel.hidden = false;
   const total = Math.max(1, scenario.total_ticks);
-  const key = [scenario.id, total, scenario.tiles.length, scenario.steps.length, state.language].join('|');
+  const key = [state.model.kernel, scenario.id, total, scenario.tiles.length, scenario.steps.length, state.language].join('|');
   const host = $('timeline');
   if (state.timelineKey !== key) {
     state.timelineKey = key;
@@ -484,6 +491,51 @@ function renderGrid() {
   }).join('');
   const independent = scenario.tiles.filter((tile) => !tile.dependencies.length).length;
   $('grid-footer').innerHTML = `<span>${t('gridParallel', {count: independent})}</span><span>${t('gridHint')}</span>`;
+}
+
+function renderOwnership() {
+  const scenario = currentScenario();
+  const groups = new Map();
+  for (const tile of scenario.tiles) {
+    const key = [tile.worker.x, tile.worker.y, tile.worker.z].join(',');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(tile);
+  }
+  const axes = ['x', 'y', 'z'].filter((axis) => axis === 'x' || scenario.grid[axis] > 1);
+  const gridFormula = axes.map((axis) => state.model.worker_grid_formulas?.[axis] ?? '1').join(', ');
+  const gridValues = axes.map((axis) => scenario.grid[axis]).join(' × ');
+  const readyPids = [...groups.values()].filter((tiles) => tiles[0].start === 0).length;
+  const strategy = state.model.parallelism;
+  const refs = [state.model.grid_source_ref, ...(scenario.claim_source_refs || []), ...(strategy?.source_refs || [])];
+  const uniqueRefs = [...new Set(refs)];
+  const selected = selectedTile();
+  const groupMap = scenario.task_group ? `<div class="ownership-group-map">${Array.from({length: scenario.task_group.count}, (_, index) => {
+    const tasks = scenario.tiles.filter((tile) => tile.task_group === index);
+    const axisIndex = scenario.dimensions.findIndex((axis) => axis.name === scenario.task_group.member_axis);
+    const members = axisIndex < 0 ? [] : [...new Set(tasks.map((tile) => `${scenario.task_group.member_axis}${tile.coords[axisIndex]}`))];
+    const pids = new Set(tasks.map((tile) => [tile.worker.x, tile.worker.y, tile.worker.z].join(',')));
+    return `<div class="ownership-input-group ${selected?.task_group === index ? 'selected' : ''}"><strong>${escapeHtml(displayLabel(scenario.task_group))}${index}</strong>${members.length ? `<span>← ${escapeHtml(members.join(', '))}</span>` : ''}<small>${t('groupTasks', {count: tasks.length})} · ${t('groupPids', {count: pids.size})}</small></div>`;
+  }).join('')}</div>` : '';
+  $('ownership-summary').innerHTML = `<div class="ownership-stats">
+      <div><span>${t('launchGrid')}</span><strong>(${escapeHtml(gridFormula)})</strong><small>→ ${gridValues} = ${groups.size} ${t('pidCount')}</small></div>
+      <div><span>${t('taskCount')}</span><strong>${scenario.tiles.length}</strong><small>${t('claimsPerPid')} ${scenario.claim_count}</small></div>
+      <div><span>${t('claimReady')}</span><strong>${readyPids}</strong><small>${t('claimUnit')}: ${escapeHtml(strategy ? displayLabel(strategy, 'claim_unit') : t('logicalTile'))}</small></div>
+    </div>${strategy ? `<p class="ownership-strategy">${escapeHtml(displayLabel(strategy, 'summary'))}</p>` : ''}${groupMap}
+    <div class="ownership-refs">${uniqueRefs.map((ref) => `<button type="button" data-source-ref="${escapeHtml(ref)}" title="${escapeHtml(t('claimSource'))}">${escapeHtml(ref)} · L${state.model.refs[ref].line} ↗</button>`).join('')}</div>`;
+  $('ownership-claims').innerHTML = [...groups].map(([key, tiles]) => {
+    tiles.sort((a, b) => a.claim_index - b.claim_index);
+    const worker = tiles[0].worker;
+    const pid = axes.map((axis) => `${state.model.worker_labels[axis] || `wid_${axis}`}=${worker[axis]}`).join(' · ');
+    const selected = tiles.some((tile) => tileKey(tile) === state.selected);
+    return `<div class="ownership-lane ${selected ? 'selected' : ''}"><div class="ownership-pid"><strong>PID (${axes.map((axis) => worker[axis]).join(', ')})</strong><small>${escapeHtml(pid)}</small></div>
+      <div class="ownership-task-list" role="group" aria-label="${escapeHtml(pid)}">${tiles.map((tile, index) => {
+        const active = tileKey(tile) === state.selected;
+        const range = tile.bounds.map((bound) => `${bound.axis}[${bound.start}:${bound.end})`).join(' × ');
+        const group = scenario.task_group && tile.task_group !== null ? `${displayLabel(scenario.task_group)}${tile.task_group}` : '';
+        const status = tileState(tile);
+        return `${index ? '<span class="ownership-arrow" aria-hidden="true">→</span>' : ''}<button type="button" class="ownership-task ${status} ${active ? 'selected' : ''}" data-claim-tile="${tileKey(tile)}" aria-label="${escapeHtml(`${tileLabel(tile)} ${range} ${group}`)}" aria-pressed="${active}"><span>${index + 1}. ${escapeHtml(tileLabel(tile))}</span><small>${escapeHtml(range)}</small>${group ? `<em>${escapeHtml(group)}</em>` : ''}</button>`;
+      }).join('')}</div></div>`;
+  }).join('');
 }
 
 function renderGemmView() {
@@ -806,6 +858,7 @@ function render() {
   renderScenarioSwitch();
   if (trace) { TraceView.render(); renderSource(); return; }
   renderMetrics();
+  renderOwnership();
   renderGrid();
   renderGemmView();
   renderRowKView();
@@ -902,6 +955,22 @@ $('tile-grid').addEventListener('click', (event) => {
   render();
   // render() replaces the grid; keep keyboard focus on the tile the user picked.
   $('tile-grid').querySelector(`[data-tile="${state.selected}"]`)?.focus({preventScroll: true});
+});
+$('ownership-view').addEventListener('click', (event) => {
+  const tileButton = event.target.closest('[data-claim-tile]');
+  if (tileButton) {
+    state.selected = tileButton.dataset.claimTile;
+    state.highlightedRef = null;
+    render();
+    $('ownership-view').querySelector(`[data-claim-tile="${state.selected}"]`)?.focus({preventScroll: true});
+    return;
+  }
+  const sourceButton = event.target.closest('[data-source-ref]');
+  if (sourceButton) {
+    state.highlightedRef = sourceButton.dataset.sourceRef;
+    renderSource();
+    $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
 });
 // One tab stop for the whole tile matrix; arrow keys move selection (WAI-ARIA grid pattern).
 $('tile-grid').addEventListener('keydown', (event) => {

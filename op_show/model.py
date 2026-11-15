@@ -232,6 +232,40 @@ def _validate_model(path):
     _require(isinstance(grid, dict) and "x" in grid, "mapping.worker_grid.x is required")
     grid_ref = _evidence(mapping.get("grid_source_ref"), refs, "worker grid")
     base["grid_source_ref"] = grid_ref
+    base["worker_grid_formulas"] = {key: grid.get(key, "1") for key in ("x", "y", "z")}
+    claim_loop = mapping.get("claim_loop")
+    if claim_loop is not None:
+        _require(isinstance(claim_loop, dict) and set(claim_loop) == {"count", "source_refs"},
+                 "mapping.claim_loop requires count and source_refs")
+        claim_refs = claim_loop["source_refs"]
+        _require(isinstance(claim_refs, list) and claim_refs,
+                 "mapping.claim_loop.source_refs must be a nonempty list")
+        for ref in claim_refs:
+            _evidence(ref, refs, "mapping.claim_loop")
+    parallelism = mapping.get("parallelism")
+    if parallelism is not None:
+        _require(isinstance(parallelism, dict), "mapping.parallelism must be an object")
+        for field in ("claim_unit", "summary"):
+            _require(isinstance(parallelism.get(field), str) and parallelism[field].strip(),
+                     f"mapping.parallelism.{field} is required")
+            _localized(parallelism, field + "_zh", "mapping.parallelism")
+        strategy_refs = parallelism.get("source_refs")
+        _require(isinstance(strategy_refs, list) and strategy_refs,
+                 "mapping.parallelism.source_refs must be a nonempty list")
+        for ref in strategy_refs:
+            _evidence(ref, refs, "mapping.parallelism")
+        group = parallelism.get("task_group")
+        if group is not None:
+            _require(isinstance(group, dict), "mapping.parallelism.task_group must be an object")
+            _require(isinstance(group.get("label"), str) and group["label"].strip(),
+                     "mapping.parallelism.task_group.label is required")
+            _localized(group, "label_zh", "mapping.parallelism.task_group")
+            if "member_axis" in group:
+                _require(group["member_axis"] in names,
+                         "mapping.parallelism.task_group.member_axis must name an output axis")
+            _evidence(group.get("source_ref"), refs, "mapping.parallelism.task_group")
+        base["parallelism"] = {key: parallelism.get(key) for key in
+                               ("claim_unit", "claim_unit_zh", "summary", "summary_zh", "source_refs")}
     gemm_view = mapping.get("gemm_view")
     if gemm_view is not None:
         _require(isinstance(gemm_view, dict), "mapping.gemm_view must be an object")
@@ -327,11 +361,22 @@ def _validate_model(path):
             grid_sizes[key] = _number(grid.get(key, "1"), params, f"{scenario_id}.worker_grid.{key}")
             _require(1 <= grid_sizes[key] <= MAX_TILES, f"{scenario_id}: worker grid {key} outside 1..{MAX_TILES}")
         worker_count = grid_sizes["x"] * grid_sizes["y"] * grid_sizes["z"]
+        claim_count = _number(claim_loop["count"], params, f"{scenario_id}.claim_loop.count") if claim_loop else 1
+        _require(1 <= claim_count <= MAX_TILES, f"{scenario_id}: claim count outside 1..{MAX_TILES}")
         expected_count = 1
         for dimension in dimensions:
             expected_count *= dimension["count"]
-        _require(worker_count <= MAX_TILES and expected_count <= MAX_TILES,
+        _require(worker_count <= MAX_TILES and expected_count <= MAX_TILES and
+                 worker_count * claim_count <= MAX_TILES,
                  f"{scenario_id}: demo supports at most {MAX_TILES} tiles")
+        group_scenario = None
+        if parallelism and parallelism.get("task_group"):
+            group = parallelism["task_group"]
+            group_count = _number(group.get("count"), params, f"{scenario_id}.task_group.count")
+            _require(1 <= group_count <= MAX_TILES, f"{scenario_id}: task group count outside 1..{MAX_TILES}")
+            group_scenario = {"label": group["label"], "label_zh": group.get("label_zh"),
+                              "count": group_count, "source_ref": group["source_ref"],
+                              "member_axis": group.get("member_axis")}
         steps = _steps(mapping.get("program"), params, refs)
         phase_count = max((step["iteration"] for step in steps if step["iteration"] is not None), default=0) + 1
         addresses = mapping.get("addresses", [])
@@ -382,33 +427,42 @@ def _validate_model(path):
         tiles = []
         lookup = {}
         for z, y, x in itertools.product(range(grid_sizes["z"]), range(grid_sizes["y"]), range(grid_sizes["x"])):
-            env = dict(params, wid_x=x, wid_y=y, wid_z=z)
-            coords, bounds = [], []
-            for dimension in dimensions:
-                index = _number(dimension["index"], env, f"{scenario_id}.{dimension['name']}.index")
-                _require(0 <= index < dimension["count"],
-                         f"{scenario_id}: worker ({x},{y},{z}) maps outside tile axis {dimension['name']}")
-                env[f"tile_{dimension['name']}"] = index
-                coords.append(index)
-                origin = index * dimension["size"]
-                bounds.append({"axis": dimension["name"], "start": origin,
-                               "end": min(origin + dimension["size"], dimension["extent"]),
-                               "tile_end": origin + dimension["size"]})
-            key = tuple(coords)
-            _require(key not in lookup, f"{scenario_id}: tile {coords} is covered by multiple workers")
-            valid_cells = 1
-            total_cells = 1
-            for dimension, bound in zip(dimensions, bounds):
-                valid_cells *= bound["end"] - bound["start"]
-                total_cells *= dimension["size"]
-            _require(total_cells <= MAX_CELLS,
-                     f"{scenario_id}: tile cell budget exceeds {MAX_CELLS}")
-            tile = {"coords": coords, "worker": {"x": x, "y": y, "z": z}, "bounds": bounds,
-                    "valid_cells": valid_cells, "total_cells": total_cells,
-                    "addresses": _address_samples(addresses, env, refs, phase_count),
-                    "dependencies": [], "step_count": len(steps)}
-            tiles.append(tile)
-            lookup[key] = tile
+            previous_claim = None
+            for claim_i in range(claim_count):
+                env = dict(params, wid_x=x, wid_y=y, wid_z=z, claim_i=claim_i)
+                coords, bounds = [], []
+                for dimension in dimensions:
+                    index = _number(dimension["index"], env, f"{scenario_id}.{dimension['name']}.index")
+                    _require(0 <= index < dimension["count"],
+                             f"{scenario_id}: worker ({x},{y},{z}) maps outside tile axis {dimension['name']}")
+                    env[f"tile_{dimension['name']}"] = index
+                    coords.append(index)
+                    origin = index * dimension["size"]
+                    bounds.append({"axis": dimension["name"], "start": origin,
+                                   "end": min(origin + dimension["size"], dimension["extent"]),
+                                   "tile_end": origin + dimension["size"]})
+                key = tuple(coords)
+                _require(key not in lookup, f"{scenario_id}: tile {coords} is covered by multiple workers")
+                group_index = None
+                if group_scenario is not None:
+                    group_index = _number(group.get("index"), env, f"{scenario_id}.task_group.index")
+                    _require(0 <= group_index < group_scenario["count"],
+                             f"{scenario_id}: task group {group_index} outside 0..{group_scenario['count'] - 1}")
+                valid_cells = 1
+                total_cells = 1
+                for dimension, bound in zip(dimensions, bounds):
+                    valid_cells *= bound["end"] - bound["start"]
+                    total_cells *= dimension["size"]
+                _require(total_cells <= MAX_CELLS,
+                         f"{scenario_id}: tile cell budget exceeds {MAX_CELLS}")
+                tile = {"coords": coords, "worker": {"x": x, "y": y, "z": z}, "bounds": bounds,
+                        "valid_cells": valid_cells, "total_cells": total_cells,
+                        "addresses": _address_samples(addresses, env, refs, phase_count),
+                        "dependencies": [list(previous_claim)] if previous_claim is not None else [],
+                        "claim_index": claim_i, "task_group": group_index, "step_count": len(steps)}
+                tiles.append(tile)
+                lookup[key] = tile
+                previous_claim = key
         expected = set(itertools.product(*(range(d["count"]) for d in dimensions)))
         missing = expected - set(lookup)
         _require(not missing, f"{scenario_id}: missing tile coverage: {sorted(missing)[:4]}")
@@ -416,6 +470,9 @@ def _validate_model(path):
         base["scenarios"].append({"id": scenario_id, "label": scenario.get("label", scenario_id),
                                    "label_zh": label_zh,
                                    "params": params, "dimensions": dimensions, "grid": grid_sizes,
+                                   "claim_count": claim_count,
+                                   "claim_source_refs": claim_loop["source_refs"] if claim_loop else [],
+                                   "task_group": group_scenario,
                                    "steps": steps, "tiles": tiles, "gemm_view": view_scenario,
                                    "row_k_view": row_k_scenario,
                                    "attention_view": attention_scenario,

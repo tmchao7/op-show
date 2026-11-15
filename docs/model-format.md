@@ -23,7 +23,9 @@ Source code, axis names, formulas, and evidence keys are never translated.
 | `mapping.worker_grid` | Integer formulas for `x`, optional `y` and `z` (default `1`). `wid_x`, `wid_y`, `wid_z` enumerate these workers. |
 | `mapping.grid_source_ref` | Evidence key for launch grid construction. |
 | `mapping.worker_labels` | Optional display labels for the worker axes, for example `{"x": "blockIdx.x", "y": "blockIdx.y"}`. The viewer shows them next to worker IDs; they are display text, not source evidence. |
-| `mapping.tile_axes` | One or two output axes. Each has `name`, `extent`, `size`, optional `size_ref`, `index`, and `source_ref`. `index` maps a worker to a logical tile coordinate; `extent` and `size` are integer formulas. |
+| `mapping.claim_loop` | Optional `{ "count": integer formula, "source_refs": [evidence keys] }`. Each worker executes `claim_i = 0..count-1` in source loop order. Omit for one output task per worker. The cited lines must cover the loop structure; the validator expands claims and chains the same worker's output tasks. |
+| `mapping.tile_axes` | One or two output axes. Each has `name`, `extent`, `size`, optional `size_ref`, `index`, and `source_ref`. `index` maps a `(worker, claim_i)` pair to a logical tile coordinate; `extent` and `size` are integer formulas. |
+| `mapping.parallelism` | Optional source-cited explanation: `claim_unit`, optional `claim_unit_zh`, `summary`, optional `summary_zh`, and nonempty `source_refs`. Optional `task_group` has `label`, optional `label_zh`, `count`, `index`, `source_ref`, and optional `member_axis`; it assigns each output task to a shared input group such as a KV head. `member_axis` names the output axis whose members should be listed under each group (GQA uses `H`). The validator checks the group index and axis. |
 | `mapping.program` | Ordered groups of steps. Each group has a nonempty `steps` list with `id`, `label`, and `source_ref`; `label_zh` is optional. A repeated group adds `repeat`, `loop_axis`, `loop_tile`, and `loop_source_ref`. |
 | `mapping.addresses` | Optional sample offset formulas. Each has `label`, `expr`, `sample` variable formulas, and `source_ref`. These are element offsets, not byte addresses. |
 | `mapping.dependencies` | Optional list of `{ "tile": [coordinates], "on": [[predecessor coordinates]] }`. Coordinates follow `tile_axes` order. |
@@ -51,12 +53,13 @@ The validator keeps the browser demo bounded and rejects a model that exceeds th
 | Output tiles per scenario | 256 |
 | Expanded steps per scenario | 96 |
 | Worker grid axis (`x`, `y`, `z`) | 1..256 |
+| Claims per PID | 1..256; worker count × claims must be at most 256 |
 | Sample variables per address | 16 |
 | Address sample evaluations per scenario (addresses × K phases × tiles) | 20,000 |
 | Length of one formula/expression string | 1024 characters |
 | Cells in one full output tile (product of axis sizes) | 1,000,000 |
 
-The validator expands every worker and requires **exactly one worker for every output tile**. It rejects duplicate or missing tiles, out-of-range coordinates, invalid source evidence, unsupported formulas, empty loop iterations, and cyclic dependencies. Running `python3 -m op_show validate <model.json>` either prints a one-line summary or a one-line `Invalid model: ...` reason.
+The validator expands every `(worker, claim_i)` pair and requires **exactly one claim for every output tile**. Multiple tiles may belong to one PID when `claim_loop` is present; those tiles are ordered by `claim_i` and get serial dependencies. It rejects duplicate or missing tiles, out-of-range coordinates/groups, invalid source evidence, unsupported formulas, empty loop iterations, and cyclic dependencies. Running `python3 -m op_show validate <model.json>` either prints a one-line summary or a one-line `Invalid model: ...` reason. The launch/PID panel displays the expanded claims before the output matrix. The two [GQA strategy models](../examples/triton_gqa_q_owned.json) and [KV-owned variant](../examples/triton_gqa_kv_owned.json) use the same kernel file to compare one Q output task per PID with a KV-head PID looping over Q tasks.
 
 For a 2D output, the first tile axis is displayed as rows and the second as columns. For a 1D output, tiles form one row. A tile's padded cells are determined by output bounds.
 
@@ -68,7 +71,7 @@ The optional `attention_view` uses output query row and feature bounds plus each
 
 ## Safe expressions
 
-Expressions accept integer constants, named parameters, `wid_x/y/z`, `tile_<axis>`, `phase`, `+`, `-`, `*`, `//`, `%`, `ceildiv(a,b)`, `min(...)`, and `max(...)`. They reject arbitrary Python, attributes, indexing, powers, and unknown names. Scope: tile-axis `index` formulas see parameters and `wid_*`; later axes also see earlier `tile_<axis>` values; address `expr`/`sample` formulas additionally see `phase` and every `tile_<axis>`. Address `sample` variables are evaluated in their listed order; a later variable may refer to an earlier one.
+Expressions accept integer constants, named parameters, `wid_x/y/z`, `claim_i`, `tile_<axis>`, `phase`, `+`, `-`, `*`, `//`, `%`, `ceildiv(a,b)`, `min(...)`, and `max(...)`. They reject arbitrary Python, attributes, indexing, powers, and unknown names. Scope: tile-axis `index` formulas see parameters, `wid_*`, and `claim_i`; later axes also see earlier `tile_<axis>` values; task-group `index` sees every `tile_<axis>`; address `expr`/`sample` formulas additionally see `phase`. Address `sample` variables are evaluated in their listed order; a later variable may refer to an earlier one.
 
 Division follows Python integer semantics, not C: `//` floors toward negative infinity and `%` takes the sign of the divisor (for example `-7 // 2 == -4` and `-7 % 3 == 2`). Negative intermediate values are allowed, but a resulting address offset must be non-negative and a tile index must fall inside its axis. `ceildiv(a, b)` is mathematical ceiling division and requires `b > 0`.
 

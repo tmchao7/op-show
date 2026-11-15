@@ -14,6 +14,7 @@ OP/SHOW is a local, hardware-free viewer for source-backed CUDA C++ and Triton t
 | Reduce | 4 行输出 tile、每 warp 一行、K 分片与输入矩阵 mask | [CUDA Warp Reduce](examples/cuda_warp_reduce.json) |
 | GEMV | A 的行/K 分片、x 向量、输出 y 与首元素偏移 | [CUDA Warp GEMV](examples/cuda_warp_gemv.json) |
 | GEMM | A × B → C、K 循环、完整和尾部分片 | [CUDA Tensor Core WMMA](examples/cuda_tensor_core_gemm.json)、[CUDA Tiled](examples/cuda_tiled_gemm.json)、[Triton CUDA](examples/triton_cuda_matmul.json) |
+| GQA PID 策略对照 | 一个 PID 认领一个 Q 输出任务，或认领一个 KV head 后依次处理多个 Q block；对比 launch 数与串行认领 | [按 Q 分配](examples/triton_gqa_q_owned.json)、[按 KV 分配](examples/triton_gqa_kv_owned.json) |
 | FlashAttention-2 风格前向 | Q/K/V、逻辑分数 S、在线 softmax 与输出 O；Q 行和 key 分片的尾块 | [Triton CUDA 教学版](examples/triton_flash_attention2.json) |
 | QKV All-to-All | Producer 任务矩阵、PID 认领、peer_mem 路径、Consumer 输出与 Wave | [Triton-Ascend v2](examples/ascend_qkv_alltoall.json) |
 
@@ -48,7 +49,7 @@ cd op-show
 python3 -m op_show serve examples --no-browser
 ```
 
-Open the printed URL, usually <http://127.0.0.1:8765/>. The operator menu has seven v1 examples (Vector Add, Reduce, GEMV, three GEMMs, and FlashAttention-2 forward) plus one v2 QKV All-to-All task trace. Each has an aligned case and a tail/padding case.
+Open the printed URL, usually <http://127.0.0.1:8765/>. The operator menu has nine v1 examples (Vector Add, Reduce, GEMV, three GEMMs, FlashAttention-2 forward, and two GQA PID strategies) plus one v2 QKV All-to-All task trace. Each has an aligned case and a tail/padding case.
 
 To check one model without starting the server:
 
@@ -71,7 +72,8 @@ op-show serve examples --port 8765
 
 ## What the viewer shows
 
-- **Output tile grid.** One card per worker and logical output tile, with bounds, valid/masked cell counts, dependencies, and the current stage. The grid is one tab stop; arrow keys move the selection, Home/End jump within a row.
+- **Launch and PID claims first.** The first panel expands the source-backed launch grid into PID lanes and shows which output tasks each PID claims in order. Select a claim to highlight its output tile, input group, source references, and logical stage. Tensor Core GEMM shows one CUDA block per C tile with a serial K loop. The GQA pair makes the tradeoff concrete: 8 Q-owned PIDs each handle one output tile, while 2 KV-owned PIDs each handle four Q output tiles serially for the illustrative 4-Q-head/2-KV-head shape. This is a claim diagram, not a measured performance comparison.
+- **Output tile grid.** One card per logical output tile, with its owning worker, bounds, valid/masked cell counts, dependencies, and current stage. The grid is one tab stop; arrow keys move the selection, Home/End jump within a row.
 - **Tensor Core GEMM dependencies and slices.** In the WMMA example, full A[M,K], B[K,N], and C[M,N] matrices form a 2×2 dependency map. Select a C tile and advance the K loop: A's row band and B's column band stay tied to that output while their highlighted intersections move. The cell view below shows exact tile masks; solid cells are valid, striped cells are zero-filled or skipped at output.
 - **Row/K slices.** For Reduce and GEMV, the selected output row tile determines the X or A matrix rows, current K slice, optional x vector, and Y/y output rows. Stripes show skipped input cells and output rows.
 - **Attention slices.** The teaching FlashAttention-2 model follows one Q output row tile across successive K/V key slices. It draws logical Q/K/V/S/O matrices and the online softmax recurrence; S is not a stored global tensor.
@@ -136,7 +138,7 @@ The validator catches structural mistakes, not a wrong description of the kernel
 
 | Look at | What good looks like |
 | --- | --- |
-| Tile coverage | Every output tile is covered exactly once. In v1, each tile has one worker; in v2, each task has a producer PID and a defined output. |
+| Tile coverage | Every output tile is covered exactly once. In v1, one worker can claim several output tiles in source loop order; in v2, each task has a producer PID and a defined output. |
 | Bounds and tails | Ranges end at the real M/N/K; masked counts match the tail cells. |
 | Address samples | The formula variables and offsets match the cited source lines. |
 | Source refs | Line numbers and code are literal matches, not guessed evidence. |

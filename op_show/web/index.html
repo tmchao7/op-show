@@ -35,6 +35,12 @@
         <div id="unknown-panel" hidden></div>
         <section id="visualization" class="workspace">
           <div class="main-column">
+            <section class="panel ownership-panel" id="ownership-view">
+              <div class="panel-head"><div><div class="section-kicker" data-i18n="ownershipSection">00 / LAUNCH · PID</div><h2 data-i18n="ownershipTitle">先看谁认领任务</h2></div></div>
+              <div id="ownership-summary" class="ownership-summary"></div>
+              <div id="ownership-claims" class="ownership-claims"></div>
+              <p class="ownership-note" data-i18n="ownershipNote">同一 PID 内的任务按源码循环顺序执行；不同 PID 仅在没有声明依赖时可并行。这里不表示实际设备调度或耗时。</p>
+            </section>
             <section class="panel tile-panel">
               <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionTiles">01 / TILE 归属</div><h2 data-i18n="tileGrid">输出 tile 网格</h2></div><div class="legend"><span><i class="legend-dot pending"></i><span data-i18n="pending">待执行</span></span><span><i class="legend-dot running"></i><span data-i18n="active">进行中</span></span><span><i class="legend-dot done"></i><span data-i18n="complete">已完成</span></span><span><i class="legend-dot pad"></i><span data-i18n="tailMasked">尾部 / mask</span></span></div></div>
               <div class="grid-context" id="grid-context"></div>

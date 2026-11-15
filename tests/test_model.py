@@ -12,6 +12,55 @@ EXAMPLES = ROOT / "examples"
 
 
 class ModelTests(unittest.TestCase):
+    def test_gqa_pid_strategies_keep_worker_and_output_tile_separate(self):
+        q_model, _ = validate_model(EXAMPLES / "triton_gqa_q_owned.json")
+        kv_model, _ = validate_model(EXAMPLES / "triton_gqa_kv_owned.json")
+        for q_case, kv_case in zip(q_model["scenarios"], kv_model["scenarios"]):
+            self.assertEqual({tuple(tile["coords"]) for tile in q_case["tiles"]},
+                             {tuple(tile["coords"]) for tile in kv_case["tiles"]})
+            self.assertEqual(len(q_case["tiles"]), 8)
+            self.assertEqual(len(kv_case["tiles"]), 8)
+            self.assertEqual(q_case["claim_count"], 1)
+            self.assertEqual(kv_case["claim_count"], 4)
+            self.assertEqual((q_case["grid"]["x"], q_case["grid"]["y"]), (2, 4))
+            self.assertEqual(kv_case["grid"]["x"], 2)
+            self.assertEqual([tile["task_group"] for tile in sorted(q_case["tiles"], key=lambda t: t["coords"])],
+                             [0, 0, 1, 1, 0, 0, 1, 1])
+            for pid in range(2):
+                claims = sorted((tile for tile in kv_case["tiles"] if tile["worker"]["x"] == pid),
+                                key=lambda tile: tile["claim_index"])
+                self.assertEqual([tile["coords"] for tile in claims],
+                                 [[0, pid * 2], [1, pid * 2], [0, pid * 2 + 1], [1, pid * 2 + 1]])
+                self.assertEqual([tile["start"] for tile in claims], [0, 10, 20, 30])
+                self.assertTrue(all(tile["task_group"] == pid for tile in claims))
+        self.assertEqual(kv_model["scenarios"][1]["total_ticks"], 40)
+        self.assertEqual([step["loop_valid"] for step in kv_model["scenarios"][1]["steps"]
+                          if step["id"] == "load-kv"], [16, 5])
+
+    def test_gqa_claim_validation_rejects_missing_or_ambiguous_ownership(self):
+        document = json.loads((EXAMPLES / "triton_gqa_kv_owned.json").read_text())
+        document["source"]["path"] = str(EXAMPLES / "sources/triton_gqa_pid_strategies.py")
+        for mutate, expected in (
+            (lambda doc: doc["mapping"]["claim_loop"].update(count="1"), "missing tile coverage"),
+            (lambda doc: doc["mapping"]["claim_loop"].update(source_refs=["missing"]),
+             "missing source evidence ref"),
+            (lambda doc: doc["mapping"]["parallelism"]["task_group"].update(index="H_KV"),
+             "task group 2 outside"),
+            (lambda doc: doc["mapping"]["parallelism"]["task_group"].update(label_zh=123),
+             "label_zh must be a nonempty string"),
+            (lambda doc: doc["mapping"]["parallelism"]["task_group"].update(member_axis="N"),
+             "member_axis must name an output axis"),
+            (lambda doc: doc["mapping"]["tile_axes"][1].update(index="wid_x"),
+             "multiple workers"),
+        ):
+            candidate = json.loads(json.dumps(document))
+            mutate(candidate)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "model.json"
+                path.write_text(json.dumps(candidate))
+                with self.assertRaisesRegex(ValidationError, expected):
+                    validate_model(path)
+
     def test_flash_attention2_query_and_key_tail_slices(self):
         model, source = validate_model(EXAMPLES / "triton_flash_attention2.json")
         self.assertIn("score = tl.dot(q, tl.trans(k))", source)

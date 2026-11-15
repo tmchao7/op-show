@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "title": "Triton CUDA · GQA PID strategy (KV-owned)",
+  "title_zh": "Triton CUDA · GQA PID 策略（按 KV 分配）",
+  "backend": "triton-cuda",
+  "source": {
+    "path": "sources/triton_gqa_pid_strategies.py",
+    "kernel": "gqa_kv_owned",
+    "refs": {
+      "q_rows": {
+        "line": 16,
+        "contains": "q_rows = q_block * BM + tl.arange(0, BM)"
+      },
+      "q_load": {
+        "line": 18,
+        "contains": "q = tl.load(Q + q_head * M * D"
+      },
+      "key_loop": {
+        "line": 23,
+        "contains": "for key_block in range(tl.cdiv(N, BN)):"
+      },
+      "k_load": {
+        "line": 25,
+        "contains": "k = tl.load(K + kv_head * N * D"
+      },
+      "v_load": {
+        "line": 27,
+        "contains": "v = tl.load(V + kv_head * N * D"
+      },
+      "score": {
+        "line": 29,
+        "contains": "score = tl.dot(q, tl.trans(k))"
+      },
+      "softmax": {
+        "line": 33,
+        "contains": "prob = tl.exp(score - next_max[:, None])"
+      },
+      "accumulate": {
+        "line": 35,
+        "contains": "acc = tl.dot(prob.to(tl.float16), v, acc)"
+      },
+      "store": {
+        "line": 39,
+        "contains": "tl.store(O + q_head * M * D"
+      },
+      "block_const": {
+        "line": 72,
+        "contains": "bm, bn = 16, 16"
+      },
+      "grid": {
+        "line": 78,
+        "contains": "grid = (h_kv,)"
+      },
+      "pid_kv": {
+        "line": 57,
+        "contains": "kv_head = tl.program_id(0)"
+      },
+      "group": {
+        "line": 58,
+        "contains": "group_size = H_Q // H_KV"
+      },
+      "q_head_loop": {
+        "line": 59,
+        "contains": "for q_head in range(kv_head * group_size, (kv_head + 1) * group_size):"
+      },
+      "q_block_loop": {
+        "line": 60,
+        "contains": "for q_block in range(tl.cdiv(M, BM)):"
+      }
+    }
+  },
+  "mapping": {
+    "status": "source-backed",
+    "note": "Illustrative GQA forward with H_Q=4, H_KV=2, D=16 and contiguous fp16 input. These are logical claim strategies, not device schedules or performance results.",
+    "note_zh": "连续布局、H_Q=4、H_KV=2、D=16 的 GQA 前向示例；这里只比较逻辑认领策略，不代表设备调度或性能结果。",
+    "grid_source_ref": "grid",
+    "worker_labels": {
+      "x": "tl.program_id(0)"
+    },
+    "worker_grid": {
+      "x": "H_KV"
+    },
+    "tile_axes": [
+      {
+        "name": "M",
+        "extent": "M",
+        "size": "BM",
+        "index": "claim_i % ceildiv(M, BM)",
+        "source_ref": "q_block_loop",
+        "size_ref": "block_const"
+      },
+      {
+        "name": "H",
+        "extent": "H_Q",
+        "size": "1",
+        "index": "wid_x * (H_Q // H_KV) + claim_i // ceildiv(M, BM)",
+        "source_ref": "q_head_loop"
+      }
+    ],
+    "program": [
+      {
+        "steps": [
+          {
+            "id": "load-q",
+            "label": "Load selected Q block",
+            "label_zh": "加载当前 Q 分片",
+            "source_ref": "q_load"
+          }
+        ]
+      },
+      {
+        "repeat": "ceildiv(N, BN)",
+        "loop_axis": "N",
+        "loop_tile": "BN",
+        "loop_source_ref": "key_loop",
+        "steps": [
+          {
+            "id": "load-kv",
+            "label": "Load this KV head / key block",
+            "label_zh": "加载所属 KV head 的 Key 分片",
+            "source_ref": "k_load"
+          },
+          {
+            "id": "score",
+            "label": "Compute QK scores",
+            "label_zh": "计算 QK 分数",
+            "source_ref": "score"
+          },
+          {
+            "id": "softmax",
+            "label": "Update online softmax",
+            "label_zh": "更新在线 softmax",
+            "source_ref": "softmax"
+          },
+          {
+            "id": "accumulate",
+            "label": "Accumulate weighted V",
+            "label_zh": "累加加权 V",
+            "source_ref": "accumulate"
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "id": "store",
+            "label": "Write this Q output block",
+            "label_zh": "写回当前 Q 输出分片",
+            "source_ref": "store"
+          }
+        ]
+      }
+    ],
+    "addresses": [
+      {
+        "label": "Q first element offset",
+        "label_zh": "Q 首元素偏移",
+        "expr": "q_head * M * D + row * D",
+        "sample": {
+          "q_head": "tile_H",
+          "row": "tile_M * BM"
+        },
+        "source_ref": "q_load"
+      },
+      {
+        "label": "K/V first element offset",
+        "label_zh": "K/V 首元素偏移",
+        "expr": "kv_head * N * D + key_row * D",
+        "sample": {
+          "kv_head": "tile_H // (H_Q // H_KV)",
+          "key_row": "phase * BN"
+        },
+        "source_ref": "k_load"
+      },
+      {
+        "label": "O first element offset",
+        "label_zh": "O 首元素偏移",
+        "expr": "q_head * M * D + row * D",
+        "sample": {
+          "q_head": "tile_H",
+          "row": "tile_M * BM"
+        },
+        "source_ref": "store"
+      }
+    ],
+    "dependencies": [],
+    "parallelism": {
+      "claim_unit": "one KV head; sequential Q claims",
+      "claim_unit_zh": "一个 KV head；串行认领多个 Q 分片",
+      "summary": "Each PID owns one KV head, then loops over its Q heads and Q blocks. The Q tasks within that PID are serial; other KV-head PIDs have no declared dependency.",
+      "summary_zh": "每个 PID 认领一个 KV head，然后依次遍历该组 Q head 与各个 Q block。同一 PID 的 Q 任务串行；不同 KV-head PID 之间没有声明依赖。",
+      "source_refs": [
+        "grid",
+        "pid_kv",
+        "q_head_loop",
+        "q_block_loop",
+        "key_loop"
+      ],
+      "task_group": {
+        "label": "KV",
+        "member_axis": "H",
+        "count": "H_KV",
+        "index": "tile_H // (H_Q // H_KV)",
+        "source_ref": "group"
+      }
+    },
+    "claim_loop": {
+      "count": "ceildiv(M, BM) * (H_Q // H_KV)",
+      "source_refs": [
+        "q_head_loop",
+        "q_block_loop"
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "id": "aligned",
+      "label": "M=N=32 · complete Q and KV blocks",
+      "label_zh": "M=N=32 · Q/KV 完整分片",
+      "params": {
+        "M": 32,
+        "N": 32,
+        "D": 16,
+        "H_Q": 4,
+        "H_KV": 2,
+        "BM": 16,
+        "BN": 16
+      }
+    },
+    {
+      "id": "padded",
+      "label": "M=27,N=21 · Q and KV tails",
+      "label_zh": "M=27、N=21 · Q/KV 尾块",
+      "params": {
+        "M": 27,
+        "N": 21,
+        "D": 16,
+        "H_Q": 4,
+        "H_KV": 2,
+        "BM": 16,
+        "BN": 16
+      }
+    }
+  ]
+}

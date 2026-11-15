@@ -106,6 +106,13 @@
       "x": "ceildiv(N, BN)",
       "y": "ceildiv(M, BM)"
     },
+    "parallelism": {
+      "claim_unit": "one 16×16 C output tile per CUDA block",
+      "claim_unit_zh": "每个 CUDA block 认领一个 16×16 C 输出 tile",
+      "summary": "The launch creates one 32-thread CUDA block for each C tile. Different blocks have no declared cross-block dependency. Inside a block, its warp traverses K slices in order, staging A's row band and B's column band before each WMMA accumulation.",
+      "summary_zh": "Launch 为每个 C tile 启动一个 32 线程 CUDA block；不同 block 没有声明跨 block 依赖。block 内的 warp 依次遍历 K 分片，每轮先搬入 A 的行带与 B 的列带，再做 WMMA 累加。",
+      "source_refs": ["grid", "warp", "tile_m", "tile_n", "loop", "mma"]
+    },
     "tile_axes": [
       {
         "name": "M",

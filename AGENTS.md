@@ -35,6 +35,7 @@
 ## 源码约束与逻辑正确性
 
 - 先读算子 kernel、launcher、形状和 stride 来源，再定义 tile、PID、地址、mask 和事件依赖。执行单元 ID 与逻辑 tile ID 必须分开。每条确定映射都应有可核对的源码引用。
+- 首先讲清 launch 网格与 PID 轴、每个 PID 认领的逻辑任务、同一 PID 的循环顺序、跨 PID 的可并行关系，再讲单个 tile 的访存和计算。GQA 等共享输入场景要区分“按 Q 输出任务分配”和“按 KV 输入组分配并串行处理多个 Q 任务”；不要把共享归属说成硬件缓存复用或性能收益。相关调研见 [docs/research-pid-ownership.md](docs/research-pid-ownership.md)。
 - v1 描述规则输出 tile；v2 当前只支持 `qkv-head-grouped` 逻辑任务轨迹。扩展格式前先确认现有 schema 是否足够，避免为单个示例做无法复用的分支。
 - 不确定的索引、同步或指针关系使用 `mapping.status: "unknown"`，不能播放猜测轨迹。示例尺寸、连续布局和 AIV 数须标为示例，不能称为实测调度或性能。
 - Wave 是源码中的每 PID 循环片段，不是跨 PID 全局屏障。远端路径遵守 store → 本 PID wave 任务结束 → fence → notify → wait → consume → output；本地直写没有 wait。
