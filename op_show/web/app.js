@@ -43,7 +43,8 @@ const translations = {
     sourceUsage: '引用位置', sourceUsageEmpty: '没有映射字段引用这一行',
     catalogError: '无法加载算子列表', pageTitle: 'OP/SHOW — 算子 Tile 执行图解',
     traceHeading: '01 / 数据如何流动', traceTitle: '从 Producer Tile 到 Consumer 输出', sourceRank: '来源 Rank', targetRank: '目标 Rank', tensor: '输出张量', producerMatrix: 'Producer 数据矩阵', claimTable: 'PID 认领表', peerPath: 'peer_mem 数据路径', consumerMatrix: 'Consumer 输出矩阵', producerHint: '行是 block，列是目标 Rank 与 head group；颜色区分 G0–G4。', claimHint: '每行一个 Producer PID；每列是本 Wave 中按步长 16 认领的任务。', consumerHint: '行是来源 Rank 与 block，列是 head group；Q/K/V 使用相同坐标。', logicalEvents: '逻辑事件与依赖', traceTiming: '每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。',
-    gemmTitle: '当前 Tensor Core 矩阵分片', gemmHint: '点击上方 C tile，再按时间轴查看 A/B 的 K 分片如何累加到 C。斜纹元素在 shared memory 中填零或在输出时跳过。', gemmMaskLegend: 'A/B 的斜纹格：越界后填零；C 的斜纹格：不写入输出。', gemmPhase: 'K 分片 {current}/{total}', gemmValid: '{count}/{total} 个有效元素',
+    gemmTitle: 'C tile 依赖哪些 A / B 数据', gemmHint: '选中上方 C tile；沿时间轴查看 A 的行带与 B 的列带如何按 K 分片相乘并累加。矩阵面积表示逻辑坐标范围，不代表硬件耗时。', gemmMaskLegend: 'A/B 的斜纹格：越界后填零；C 的斜纹格：不写入输出。', gemmPhase: 'K 分片 {current}/{total}', gemmValid: '{count}/{total} 个有效元素',
+    gemmDetailTitle: '当前分片 · 逐格检查', gemmDetailHint: '下方显示实际 tile 尺寸及边界 mask', gemmMapHint: '选中的 A 行带 × B 列带 → C tile；深色交点是当前 K 分片', gemmMapTail: '尾 tile：斜纹元素见下方逐格图',
     rowkReduceTitle: '按行归约的数据分片', rowkGemvTitle: '矩阵向量乘的数据分片', rowkHint: '选择输出 tile，再沿时间轴查看当前 K 分片、有效输入和输出行。每个 warp 负责一行；格子是逻辑数据位置。', rowkMaskLegend: '斜纹输入格被边界条件跳过；斜纹输出行不会写回。',
     attentionTitle: '当前 Attention 数据分片', attentionHint: '选择输出 tile，再沿时间轴查看 Q 行块如何依次读取 K/V 分片、更新在线 softmax 状态并写出 O。', attentionMaskLegend: '斜纹 Q/O 行属于尾块；K/V 的斜纹行超出 N，S 的对应列被设为 −∞。补齐的 Q 行不会写回 O。', attentionPhase: 'Key 分片 {current}/{total}', attentionScores: 'S 是逻辑 QKᵀ 分数矩阵，不是全局内存张量。', attentionRecurrence: '在线 softmax：m′ = max(m, rowmax(S))；α = exp(m − m′)；l′ = αl + rowsum(exp(S − m′))；acc′ = αacc + P × V；O = acc / l。'
   },
@@ -87,7 +88,8 @@ const translations = {
     sourceUsage: 'USED BY', sourceUsageEmpty: 'No mapping fields cite this line',
     catalogError: 'Could not load catalog', pageTitle: 'OP/SHOW — Tile execution explorer',
     traceHeading: '01 / DATA FLOW', traceTitle: 'Producer tiles to Consumer output', sourceRank: 'SOURCE RANK', targetRank: 'TARGET RANK', tensor: 'OUTPUT TENSOR', producerMatrix: 'Producer data matrix', claimTable: 'PID claim table', peerPath: 'peer_mem data path', consumerMatrix: 'Consumer output matrix', producerHint: 'Rows are blocks; columns are target ranks and head groups. G0–G4 colors identify data groups.', claimHint: 'Each row is one Producer PID; columns show stride-16 claims in this wave.', consumerHint: 'Rows are source ranks and blocks; columns are head groups. Q/K/V share coordinates.', logicalEvents: 'Logical events and dependencies', traceTiming: 'Each step completes all events with satisfied dependencies. A wave is not a global PID barrier or device time.',
-    gemmTitle: 'Current Tensor Core matrix slices', gemmHint: 'Select a C tile above, then use the timeline to see successive A/B K slices accumulate into C. Striped cells are zero-filled in shared memory or skipped on output.', gemmMaskLegend: 'Striped A/B cells are zero-filled; striped C cells are not stored.', gemmPhase: 'K slice {current}/{total}', gemmValid: '{count}/{total} valid elements',
+    gemmTitle: 'Which A / B data feeds this C tile', gemmHint: 'Select a C tile above. Step through K slices to see an A row band and B column band multiply and accumulate. Matrix area shows logical coordinates, not hardware time.', gemmMaskLegend: 'Striped A/B cells are zero-filled; striped C cells are not stored.', gemmPhase: 'K slice {current}/{total}', gemmValid: '{count}/{total} valid elements',
+    gemmDetailTitle: 'Current slices · cell inspection', gemmDetailHint: 'Actual tile size and boundary masks appear below', gemmMapHint: 'Selected A row band × B column band → C tile; dark intersection is the current K slice', gemmMapTail: 'Tail tile: see striped cells in the detail below',
     rowkReduceTitle: 'Row reduction data slices', rowkGemvTitle: 'Matrix-vector data slices', rowkHint: 'Select an output tile, then follow the timeline through each K slice, valid input, and output row. Each warp owns one row; cells show logical data positions.', rowkMaskLegend: 'Striped input cells are skipped by bounds checks; striped output rows are not stored.',
     attentionTitle: 'Current Attention data slices', attentionHint: 'Select an output tile, then follow each K/V slice as the Q rows update online softmax state and write O.', attentionMaskLegend: 'Striped Q/O rows are tail rows; striped K/V rows exceed N and their S columns become −∞. Padded Q rows are not stored to O.', attentionPhase: 'Key slice {current}/{total}', attentionScores: 'S is the logical QKᵀ score matrix, not a global-memory tensor.', attentionRecurrence: 'Online softmax: m′ = max(m, rowmax(S)); α = exp(m − m′); l′ = αl + rowsum(exp(S − m′)); acc′ = αacc + P × V; O = acc / l.'
   }
@@ -500,6 +502,40 @@ function renderGemmView() {
   $('gemm-phase').textContent = t('gemmPhase', {
     current: phase + 1, total: Math.ceil(view.k_extent / view.k_size)
   });
+  const mExtent = scenario.dimensions[0].extent;
+  const nExtent = scenario.dimensions[1].extent;
+  const kExtent = view.k_extent;
+  const percentage = (value, extent) => `${(value / extent * 100).toFixed(4)}%`;
+  const rect = (className, top, left, height, width, rowExtent, colExtent) =>
+    `<span class="gemm-map-region ${className}" style="top:${percentage(top, rowExtent)};left:${percentage(left, colExtent)};height:${percentage(height, rowExtent)};width:${percentage(width, colExtent)}"></span>`;
+  function overview(name, rows, cols, rowAxis, colAxis, band, active, ref) {
+    const range = `${rowAxis}[${active.row}:${active.row + active.height}) × ${colAxis}[${active.col}:${active.col + active.width})`;
+    return `<div class="gemm-map-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}">
+      <div class="gemm-map-heading"><strong>${name}</strong><span>${rows} × ${cols}</span></div>
+      <div class="matrix-frame gemm-map-frame">
+        <span class="matrix-axis col">${colAxis} [0:${cols}) →</span>
+        <span class="matrix-axis row">${rowAxis} [0:${rows}) ↓</span>
+        <div class="gemm-map-plot" role="img" aria-label="${name}: ${escapeHtml(range)}">
+          ${rect('band', band.row, band.col, band.height, band.width, rows, cols)}
+          ${rect('active', active.row, active.col, active.height, active.width, rows, cols)}
+        </div>
+      </div>
+      <div class="gemm-map-coordinates">${escapeHtml(range)}</div>
+      <button type="button" class="gemm-map-source" data-source-ref="${escapeHtml(ref)}">L${state.model.refs[ref].line} ↗</button>
+    </div>`;
+  }
+  const tail = m.end < m.tile_end || n.end < n.tile_end || kEnd - kStart < view.k_size;
+  $('gemm-dependency').innerHTML = `<div class="gemm-map-intro"><span class="gemm-map-equation">A[M,K] × B[K,N] → C[M,N]</span>
+      <p>${t('gemmMapHint')}</p>${tail ? `<span class="gemm-map-tail">${t('gemmMapTail')}</span>` : ''}</div>
+    ${overview('B', kExtent, nExtent, 'K', view.n_axis,
+      {row: 0, col: n.start, height: kExtent, width: n.end - n.start},
+      {row: kStart, col: n.start, height: kEnd - kStart, width: n.end - n.start}, view.source_refs.b)}
+    ${overview('A', mExtent, kExtent, view.m_axis, 'K',
+      {row: m.start, col: 0, height: m.end - m.start, width: kExtent},
+      {row: m.start, col: kStart, height: m.end - m.start, width: kEnd - kStart}, view.source_refs.a)}
+    ${overview('C', mExtent, nExtent, view.m_axis, view.n_axis,
+      {row: m.start, col: n.start, height: m.end - m.start, width: n.end - n.start},
+      {row: m.start, col: n.start, height: m.end - m.start, width: n.end - n.start}, view.source_refs.c)}`;
   function matrix(name, rowStart, colStart, rows, cols, rowEnd, colEnd, rowAxis, colAxis, ref) {
     let cells = '';
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
@@ -898,7 +934,7 @@ $('tile-grid').addEventListener('keydown', (event) => {
   const buttons = $('tile-grid').querySelectorAll ? [...$('tile-grid').querySelectorAll('[data-tile]')] : [];
   buttons.find((node) => node.dataset.tile === state.selected)?.focus();
 });
-$('gemm-matrices').addEventListener('click', (event) => {
+$('gemm-view').addEventListener('click', (event) => {
   const button = event.target.closest('[data-source-ref]');
   if (!button) return;
   state.highlightedRef = button.dataset.sourceRef;

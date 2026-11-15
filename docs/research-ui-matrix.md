@@ -70,3 +70,15 @@
 7. **不引入**：前端框架、第三方字体/图标、构建步骤；新增样式均由本项目编写。
 
 许可结论：本轮只参考公开文档和社区文章中的排布、层级与配色规则，没有复制代码、色板、图片或大段文案；所有改动仍使用仓库自有暖白体系。
+
+## GEMM 依赖布局（2026-11-15）
+
+用户提供的 GEMM 示意图把完整 A 放左下、B 放右上、C 放右下；A 的 M 行带与 B 的 N 列带在当前 K 分片相交，指向 C 中同一输出 tile。现有 OP/SHOW 只把三个 16×16 分片平铺，缺少完整矩阵坐标，难以看出输出位置依赖哪两条输入带。
+
+| 来源 | 可借鉴部分 | 取舍与许可 |
+| --- | --- | --- |
+| 用户本轮提供的 GEMM 示意图 | A/B/C 的空间朝向、M 行带 × N 列带 → C tile、K 循环沿 A/B 的方向 | 只借关系，页面重新绘制；不复制图片资产或原图配色。 |
+| [Triton 官方 Programming Guide](https://triton-lang.org/main/programming-guide/chapter-1/introduction.html)（2026-11-15 可访问） | program ID 与输出 tile 对应、循环中的输入分片 | 用于核对逻辑关系；不复制图像。 |
+| [CUDA Tiled GEMM Visualizer](https://www.joelfernandes.org/simulators/cuda-tiled-gemm/index.html)（2026-11-15 可访问） | 当前 A/B 分片和 C 输出联动 | 已有动画偏内置 GEMM；本项目用源码模型驱动，重画概览与分片。 |
+
+实施时保留当前逐格 A/B/C 分片作为 mask 细节，在其上增加完整 A[M,K]、B[K,N]、C[M,N] 的依赖概览。概览只画真实维度与选中范围，不假装显示设备中的 fragment；当前 K 分片在 A/B 中移动，C tile 位置保持固定。两层都用既有暖白和 A/B/C 分类色。

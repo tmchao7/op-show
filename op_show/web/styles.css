@@ -590,6 +590,51 @@ footer span { margin: 0 8px; color: #bda895; }
 
 /* Optional GEMM input/output slice view for source-backed v1 models. */
 .gemm-phase { padding: 6px 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--panel-soft); color: var(--primary-deep); font: 700 9px var(--mono); }
+.gemm-dependency {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 30px;
+  padding: 4px 20px 22px;
+  align-items: stretch;
+}
+.gemm-map-intro {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 15px 22px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface-sunken);
+}
+.gemm-map-equation { color: var(--primary-deep); font: 700 clamp(13px, 1.6vw, 18px)/1.4 var(--mono); }
+.gemm-map-intro p { max-width: 32ch; margin: 0; color: var(--soft); font-size: 11px; line-height: 1.6; }
+.gemm-map-tail { color: var(--gold); font-size: 10px; font-weight: 650; }
+.gemm-map-card { --matrix: var(--primary); --matrix-soft: var(--primary-soft); min-width: 0; padding: 9px 12px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-raised); position: relative; }
+.gemm-map-card.a { --matrix: #b66e4f; --matrix-soft: #f5e2d5; }
+.gemm-map-card.b { --matrix: #4e817d; --matrix-soft: #deeeeb; }
+.gemm-map-card.c { --matrix: #68834d; --matrix-soft: #e8f0df; }
+.gemm-map-card.focused { border-color: var(--matrix); box-shadow: 0 0 0 2px var(--matrix-soft); }
+.gemm-map-heading { display: flex; align-items: baseline; gap: 9px; color: var(--matrix); font: 700 10px var(--mono); }
+.gemm-map-heading strong { font-size: 15px; }
+.gemm-map-heading span { color: var(--soft); font-size: 9px; }
+.gemm-map-frame { margin-top: 7px; }
+.gemm-map-frame .matrix-axis { font-size: 9px; }
+.gemm-map-plot { grid-column: 2; grid-row: 2; position: relative; width: 100%; aspect-ratio: 1.75; overflow: hidden; border: 1px solid var(--matrix); border-radius: 4px; background: var(--matrix-soft); }
+.gemm-map-region { position: absolute; display: block; }
+.gemm-map-region.band { background: color-mix(in srgb, var(--matrix) 30%, transparent); box-shadow: inset 0 0 0 1px var(--matrix); }
+.gemm-map-region.active { z-index: 1; background: var(--matrix); box-shadow: inset 0 0 0 1px #342a2470; }
+.gemm-map-card.c .gemm-map-region.band { background: transparent; }
+.gemm-map-coordinates { margin: 8px 0 0 11px; padding-right: 37px; color: var(--text); font: 650 10px/1.4 var(--mono); overflow-wrap: anywhere; }
+.gemm-map-source { position: absolute; right: 12px; bottom: 8px; padding: 3px; border: 0; background: transparent; color: var(--primary-deep); font: 650 9px var(--mono); }
+.gemm-map-source:hover { text-decoration: underline; }
+.gemm-map-card.a::after, .gemm-map-card.b::after { position: absolute; color: var(--primary); font: 700 21px var(--mono); line-height: 1; }
+.gemm-map-card.a::after { content: '→'; right: -25px; top: 48%; }
+.gemm-map-card.b::after { content: '↓'; left: 49%; bottom: -23px; }
+.gemm-detail-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 9px; margin: 0 20px 8px; padding-top: 13px; border-top: 1px solid var(--line); }
+.gemm-detail-heading strong { font-size: 11px; }
+.gemm-detail-heading span { color: var(--soft); font-size: 10px; }
 .gemm-matrices { display: grid; grid-template-columns: minmax(0,1fr) 15px minmax(0,1fr) 15px minmax(0,1fr); align-items: center; gap: 4px; padding: 3px 16px 16px; }
 .gemm-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; padding-top: 2px; }
 .gemm-matrix-card { min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 7px; background: #fbf6ef; transition: box-shadow .18s, border-color .18s; }
@@ -610,6 +655,20 @@ footer span { margin: 0 8px; color: #bda895; }
 .gemm-operator { color: var(--primary); font: 700 16px var(--mono); text-align: center; }
 @media (max-width: 900px) { .gemm-matrices { padding: 4px 14px 18px; } }
 @media (max-width: 620px) {
+  .gemm-dependency { gap: 16px 20px; padding: 3px 11px 18px; }
+  .gemm-map-intro { padding: 10px; }
+  .gemm-map-intro p { font-size: 9px; }
+  .gemm-map-equation { font-size: 11px; overflow-wrap: anywhere; }
+  .gemm-map-card { padding: 6px; }
+  .gemm-map-heading strong { font-size: 12px; }
+  .gemm-map-heading span { font-size: 8px; }
+  .gemm-map-frame .matrix-axis { font-size: 8px; }
+  .gemm-map-plot { aspect-ratio: 1.2; }
+  .gemm-map-coordinates { margin-left: 9px; padding-right: 0; font-size: 8px; }
+  .gemm-map-source { position: static; margin-left: 7px; font-size: 8px; }
+  .gemm-map-card.a::after { right: -18px; font-size: 15px; }
+  .gemm-map-card.b::after { bottom: -18px; font-size: 15px; }
+  .gemm-detail-heading { margin: 0 11px 7px; }
   .gemm-matrices { grid-template-columns: 1fr; gap: 7px; justify-items: center; }
   .gemm-matrix-card { width: min(100%, 280px); }
   .gemm-cell-grid { width: min(100%, 220px); margin: auto; }

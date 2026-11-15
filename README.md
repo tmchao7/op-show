@@ -72,7 +72,7 @@ op-show serve examples --port 8765
 ## What the viewer shows
 
 - **Output tile grid.** One card per worker and logical output tile, with bounds, valid/masked cell counts, dependencies, and the current stage. The grid is one tab stop; arrow keys move the selection, Home/End jump within a row.
-- **Tensor Core slices.** For a GEMM model, the A × B → C panel follows the selected C tile and K slice. Solid cells are valid; striped cells are zero-filled or skipped at output.
+- **Tensor Core GEMM dependencies and slices.** In the WMMA example, full A[M,K], B[K,N], and C[M,N] matrices form a 2×2 dependency map. Select a C tile and advance the K loop: A's row band and B's column band stay tied to that output while their highlighted intersections move. The cell view below shows exact tile masks; solid cells are valid, striped cells are zero-filled or skipped at output.
 - **Row/K slices.** For Reduce and GEMV, the selected output row tile determines the X or A matrix rows, current K slice, optional x vector, and Y/y output rows. Stripes show skipped input cells and output rows.
 - **Attention slices.** The teaching FlashAttention-2 model follows one Q output row tile across successive K/V key slices. It draws logical Q/K/V/S/O matrices and the online softmax recurrence; S is not a stored global tensor.
 - **Logical timeline.** One lane per tile, with one tick per stage slot. Click a segment to seek to that stage. The percentage is completed stages, not elapsed time or utilization.
