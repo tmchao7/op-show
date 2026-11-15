@@ -10,6 +10,7 @@ const translations = {
     intro: '从 program 或 block ID 找到它负责的数据，再逐步查看哪些 tile 可以并行、哪些阶段必须依次执行。',
     logical: '逻辑执行进度', logicalNote: '无依赖的 tile 同时推进。时间轴展示依赖关系，不代表设备耗时。',
     settings: '可视化设置', operator: '算子', inputShape: '输入形状', statistics: '模型统计',
+    detailTitle: '当前任务', detailTabs: '详情视图', detailSummary: '摘要', detailAddresses: '地址', detailMask: '逐格', detailTasks: '任务', detailSource: '源码',
     sectionTiles: '01 / TILE 归属', tileGrid: '输出 tile 网格', outputTiles: '输出 tile',
     ownershipSection: '00 / LAUNCH · PID', ownershipTitle: '先看谁认领任务', ownershipNote: '同一 PID 内的任务按源码循环顺序执行；不同 PID 仅在没有声明依赖时可并行。这里不表示实际设备调度或耗时。',
     launchGrid: 'Launch 网格', pidCount: '个 PID', taskCount: '个输出任务', claimsPerPid: '每 PID 认领', claimUnit: '认领单位', claimOrder: '源码循环顺序', claimReady: '可并行启动的 PID', claimSelected: '当前选中', claimSource: '查看认领源码', groupTasks: '{count} 个输出任务', groupPids: '{count} 个 PID 参与',
@@ -57,6 +58,7 @@ const translations = {
     intro: 'Follow each tile from its program or block ID to the data it owns. Step through the work that happens in parallel and the steps that must happen in order.',
     logical: 'Logical execution', logicalNote: 'All independent tiles advance together. The timeline shows dependencies, not device timing.',
     settings: 'Visualization settings', operator: 'OPERATOR', inputShape: 'INPUT SHAPE', statistics: 'Model statistics',
+    detailTitle: 'Selected task', detailTabs: 'Detail views', detailSummary: 'Summary', detailAddresses: 'Offsets', detailMask: 'Cells', detailTasks: 'Tasks', detailSource: 'Source',
     sectionTiles: '01 / TILE OWNERSHIP', tileGrid: 'Output tile grid', outputTiles: 'Output tiles',
     ownershipSection: '00 / LAUNCH · PID', ownershipTitle: 'Who claims each task', ownershipNote: 'Claims within a PID follow source loop order. Different PIDs can advance together only when no dependency is declared. This is not device scheduling or elapsed time.',
     launchGrid: 'Launch grid', pidCount: 'PIDs', taskCount: 'output tasks', claimsPerPid: 'Claims per PID', claimUnit: 'Claim unit', claimOrder: 'Source loop order', claimReady: 'PIDs ready in parallel', claimSelected: 'Selected', claimSource: 'View claim source', groupTasks: '{count} output tasks', groupPids: '{count} PIDs involved',
@@ -124,7 +126,41 @@ function applyLanguage() {
 
 const state = { catalog: [], model: null, modelIndex: null, source: '', scenario: null, selected: null,
   tick: 0, timer: null, speed: 650, highlightedRef: null, language: savedLanguage(),
-  timelineKey: null, timelineSegments: [], refIndex: null, shareTimer: null };
+  timelineKey: null, timelineSegments: [], refIndex: null, shareTimer: null, detailTab: 'summary' };
+
+function setupWorkbench() {
+  const rail = $('detail-rail-content');
+  rail.append(document.querySelector('.inspector-panel'), document.querySelector('.trace-detail'), $('source-panel'));
+  const gemmMask = document.createElement('div');
+  gemmMask.id = 'gemm-mask-detail';
+  gemmMask.append(document.querySelector('.gemm-detail-heading'), $('gemm-matrices'),
+    document.querySelector('.gemm-panel > .playback-footnote'));
+  rail.append(gemmMask);
+  $('trace-task-detail').append(document.querySelector('[data-trace-view="claim"]'), document.querySelector('[data-trace-view="path"]'));
+  $('timeline-drawer').append($('timeline-panel'));
+}
+setupWorkbench();
+
+function openDetailTab(name) {
+  const allowed = ['summary', 'addresses', 'mask', 'source', 'tasks'];
+  if (!allowed.includes(name) || (name === 'tasks' && !isTraceModel())) name = 'summary';
+  state.detailTab = name;
+  $('detail-rail').dataset.activeTab = name;
+  document.querySelectorAll('[data-detail-tab]').forEach((button) => {
+    button.setAttribute('aria-selected', String(button.dataset.detailTab === name));
+    button.tabIndex = button.dataset.detailTab === name ? 0 : -1;
+  });
+  $('detail-rail-content').scrollTop = 0;
+  if (name === 'source' && state.model) {
+    delete $('source-code').dataset.lastLine;
+    renderSource();
+  }
+}
+
+function jumpToSource(ref) {
+  state.highlightedRef = ref;
+  openDetailTab('source');
+}
 
 function isTraceModel() {
   return state.model?.schema_version === 2 && state.model.status !== 'unknown';
@@ -238,6 +274,7 @@ function parseHash() {
   return {
     model: params.get('m'), scenario: params.get('s'), tile: params.get('tile'),
     task: params.get('task'), tick: params.get('tick'), language: params.get('lang'),
+    detail: params.get('detail'),
   };
 }
 
@@ -246,6 +283,7 @@ function buildShareHash() {
   if (state.modelIndex !== null) params.set('m', String(state.modelIndex));
   if (state.scenario) params.set('s', state.scenario);
   if (state.language) params.set('lang', state.language);
+  if (state.detailTab !== 'summary') params.set('detail', state.detailTab);
   if (isTraceModel()) {
     const trace = TraceView.getState();
     if (trace.selected) params.set('task', trace.selected);
@@ -295,6 +333,7 @@ function applyHashState(hash) {
   if ((hash.language === 'zh' || hash.language === 'en') && hash.language !== state.language) {
     setLanguage(hash.language);
   }
+  if (hash.detail) openDetailTab(hash.detail);
   const scenario = state.model?.scenarios.find((item) => item.id === hash.scenario);
   if (scenario && scenario.id !== state.scenario) {
     state.scenario = scenario.id;
@@ -562,14 +601,20 @@ function renderGemmView() {
     `<span class="gemm-map-region ${className}" style="top:${percentage(top, rowExtent)};left:${percentage(left, colExtent)};height:${percentage(height, rowExtent)};width:${percentage(width, colExtent)}"></span>`;
   function overview(name, rows, cols, rowAxis, colAxis, band, active, ref) {
     const range = `${rowAxis}[${active.row}:${active.row + active.height}) × ${colAxis}[${active.col}:${active.col + active.width})`;
+    const outputTiles = name === 'C' ? scenario.tiles.map((item) => {
+      const [row, col] = item.bounds;
+      const picked = tileKey(item) === state.selected;
+      return `<button type="button" class="gemm-output-tile ${tileState(item)} ${picked ? 'selected' : ''}" data-gemm-tile="${tileKey(item)}" tabindex="${picked ? 0 : -1}" aria-pressed="${picked}" aria-label="${escapeHtml(tileLabel(item))}, ${row.axis}[${row.start}:${row.end}) × ${col.axis}[${col.start}:${col.end})" style="top:${percentage(row.start, rows)};left:${percentage(col.start, cols)};height:${percentage(row.end - row.start, rows)};width:${percentage(col.end - col.start, cols)}">${escapeHtml(tileLabel(item))}</button>`;
+    }).join('') : '';
     return `<div class="gemm-map-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}">
       <div class="gemm-map-heading"><strong>${name}</strong><span>${rows} × ${cols}</span></div>
       <div class="matrix-frame gemm-map-frame">
         <span class="matrix-axis col">${colAxis} [0:${cols}) →</span>
         <span class="matrix-axis row">${rowAxis} [0:${rows}) ↓</span>
-        <div class="gemm-map-plot" role="img" aria-label="${name}: ${escapeHtml(range)}">
+        <div class="gemm-map-plot" role="${name === 'C' ? 'group' : 'img'}" aria-label="${name}: ${escapeHtml(range)}">
           ${rect('band', band.row, band.col, band.height, band.width, rows, cols)}
-          ${rect('active', active.row, active.col, active.height, active.width, rows, cols)}
+          ${name === 'C' ? '' : rect('active', active.row, active.col, active.height, active.width, rows, cols)}
+          ${outputTiles}
         </div>
       </div>
       <div class="gemm-map-coordinates">${escapeHtml(range)}</div>
@@ -787,16 +832,16 @@ function renderInspector() {
     return `<div class="formula-card"><div class="formula-title">${escapeHtml(displayLabel(address))}</div><div class="formula-expr">${escapeHtml(address.expr)}</div><div class="formula-result">${escapeHtml(substitutions)} → ${t('offset')} <strong>${sample.offset}</strong></div><button class="formula-source" data-source-ref="${escapeHtml(address.source_ref)}">${t('viewSource')}</button></div>`;
   }).join('');
   $('inspector-content').innerHTML = `
-    <div class="inspector-section"><div class="inspector-label">${t('logicalTile')}</div><span class="inspector-id">${escapeHtml(tileLabel(tile))}</span>${tail ? `<span class="inspector-badge">${t('tailTile')}</span>` : ''}</div>
-    <div class="inspector-section"><div class="inspector-label">${t('ownership')}</div><div class="detail-table">
+    <div class="inspector-section" data-detail-section="summary"><div class="inspector-label">${t('logicalTile')}</div><span class="inspector-id">${escapeHtml(tileLabel(tile))}</span>${tail ? `<span class="inspector-badge">${t('tailTile')}</span>` : ''}</div>
+    <div class="inspector-section" data-detail-section="summary"><div class="inspector-label">${t('ownership')}</div><div class="detail-table">
       <span class="key">${t('worker')}</span><span class="value">${escapeHtml(worker)}</span>
       <span class="key">${t('output')}</span><span class="value">${escapeHtml(bounds)}</span>
       <span class="key">${t('valid')}</span><span class="value">${tile.valid_cells} / ${tile.total_cells} ${t('validCells')}</span>
       <span class="key">${t('dependencies')}</span><span class="value">${tile.dependencies.length ? escapeHtml(tile.dependencies.map((dep) => `T[${dep.join(', ')}]`).join(', ')) : t('noDependencies')}</span>
       <span class="key">${t('current')}</span><span class="value">${state.tick >= tile.end ? t('stageComplete') : state.tick < tile.start ? t('waiting') : escapeHtml(displayLabel(step))}</span>
     </div></div>
-    <div class="inspector-section"><div class="inspector-label">${t('validAndMask')}</div>${renderCells(tile, scenario)}<div class="cell-summary">${t('cellsLegend')} ${tail ? `<strong>${t('maskedTail', {count: tile.total_cells - tile.valid_cells})}</strong>` : t('noPadding')}</div>${loopSlice}</div>
-    <div class="inspector-section inspector-bottom"><div class="inspector-label">${t('addressOffsets')}</div>${addresses || `<div class="cell-summary">${t('noAddress')}</div>`}</div>`;
+    <div class="inspector-section" data-detail-section="mask"><div class="inspector-label">${t('validAndMask')}</div>${renderCells(tile, scenario)}<div class="cell-summary">${t('cellsLegend')} ${tail ? `<strong>${t('maskedTail', {count: tile.total_cells - tile.valid_cells})}</strong>` : t('noPadding')}</div>${loopSlice}</div>
+    <div class="inspector-section inspector-bottom" data-detail-section="addresses"><div class="inspector-label">${t('addressOffsets')}</div>${addresses || `<div class="cell-summary">${t('noAddress')}</div>`}</div>`;
 }
 
 function renderSource() {
@@ -817,7 +862,7 @@ function renderSource() {
     return `<span class="code-line${index + 1 === line ? ' highlight' : ''}${cited ? ' cited' : ''}" id="line-${index + 1}" data-line="${index + 1}"${interactive}><span class="line-no">${String(index + 1).padStart(2, '0')}</span>${escapeHtml(text || ' ')}</span>`;
   }).join('');
   const target = $(`line-${line}`);
-  if (target && $('source-code').dataset.lastLine !== String(line)) {
+  if (target && state.detailTab === 'source' && $('source-code').dataset.lastLine !== String(line)) {
     const viewport = $('source-code').parentElement;
     viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - viewport.clientHeight / 2;
     $('source-code').dataset.lastLine = String(line);
@@ -827,6 +872,7 @@ function renderSource() {
 function showErrorPanel(message) {
   pause();
   TraceView.pause();
+  $('workbench-layout').dataset.modelKind = 'error';
   $('scenario-switch').innerHTML = '';
   $('unknown-panel').hidden = false;
   $('unknown-panel').className = 'unknown';
@@ -842,6 +888,10 @@ function render() {
   $('backend-pill').textContent = backendLabel(state.model.backend);
   const unknown = state.model.status === 'unknown';
   const trace = state.model.schema_version === 2;
+  $('workbench-layout').dataset.modelKind = unknown ? 'unknown' : trace ? 'trace' :
+    currentScenario()?.gemm_view ? 'gemm' : currentScenario()?.attention_view ? 'attention' :
+    currentScenario()?.row_k_view ? 'rowk' : 'tile';
+  if (state.detailTab === 'tasks' && !trace) openDetailTab('summary');
   $('visualization').hidden = unknown || trace;
   $('trace-visualization').hidden = unknown || !trace;
   $('metrics').hidden = unknown || trace;
@@ -852,6 +902,7 @@ function render() {
     $('scenario-switch').innerHTML = '';
     $('unknown-panel').className = 'unknown';
     $('unknown-panel').textContent = t('mappingUnknown', {note: displayLabel(state.model, 'note')});
+    if (state.detailTab !== 'source') openDetailTab('source');
     renderSource();
     return;
   }
@@ -893,13 +944,14 @@ async function loadModel(index) {
       (state.model.scenarios[0]?.tiles[0] ? tileKey(state.model.scenarios[0].tiles[0]) : null);
     state.tick = 0;
     state.highlightedRef = null;
+    openDetailTab(state.model.schema_version === 2 && state.model.status !== 'unknown' ? 'tasks' : 'summary');
     delete $('source-code').dataset.lastLine;
     $('model-select').value = String(index);
     if (state.model.schema_version === 2 && state.model.status !== 'unknown') {
       TraceView.init(state.model, currentScenario(), (ref, scroll) => {
         state.highlightedRef = ref;
         renderSource();
-        if (scroll) $('source-panel').scrollIntoView({behavior:'smooth', block:'start'});
+        if (scroll) openDetailTab('source');
       }, () => state.language);
     }
     render();
@@ -967,9 +1019,7 @@ $('ownership-view').addEventListener('click', (event) => {
   }
   const sourceButton = event.target.closest('[data-source-ref]');
   if (sourceButton) {
-    state.highlightedRef = sourceButton.dataset.sourceRef;
-    renderSource();
-    $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+    jumpToSource(sourceButton.dataset.sourceRef);
   }
 });
 // One tab stop for the whole tile matrix; arrow keys move selection (WAI-ARIA grid pattern).
@@ -1004,25 +1054,48 @@ $('tile-grid').addEventListener('keydown', (event) => {
   buttons.find((node) => node.dataset.tile === state.selected)?.focus();
 });
 $('gemm-view').addEventListener('click', (event) => {
+  const tileButton = event.target.closest('[data-gemm-tile]');
+  if (tileButton) {
+    state.selected = tileButton.dataset.gemmTile;
+    state.highlightedRef = null;
+    render();
+    $('gemm-view').querySelector(`[data-gemm-tile="${state.selected}"]`)?.focus({preventScroll: true});
+    return;
+  }
   const button = event.target.closest('[data-source-ref]');
   if (!button) return;
-  state.highlightedRef = button.dataset.sourceRef;
-  renderSource();
-  $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+  jumpToSource(button.dataset.sourceRef);
+});
+$('gemm-view').addEventListener('keydown', (event) => {
+  if (!event.target.closest?.('[data-gemm-tile]') ||
+      !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+  const scenario = currentScenario();
+  const coords = [...selectedTile().coords];
+  const axis = scenario.dimensions[1];
+  if (event.key === 'ArrowLeft') coords[1] -= 1;
+  if (event.key === 'ArrowRight') coords[1] += 1;
+  if (event.key === 'ArrowUp') coords[0] -= 1;
+  if (event.key === 'ArrowDown') coords[0] += 1;
+  if (event.key === 'Home') coords[1] = 0;
+  if (event.key === 'End') coords[1] = axis.count - 1;
+  const next = scenario.tiles.find((item) => item.coords.every((value, index) => value === coords[index]));
+  event.preventDefault();
+  event.stopPropagation();
+  if (!next) return;
+  state.selected = tileKey(next);
+  state.highlightedRef = null;
+  render();
+  $('gemm-view').querySelector(`[data-gemm-tile="${state.selected}"]`)?.focus({preventScroll: true});
 });
 $('rowk-matrices').addEventListener('click', (event) => {
   const button = event.target.closest('[data-source-ref]');
   if (!button) return;
-  state.highlightedRef = button.dataset.sourceRef;
-  renderSource();
-  $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+  jumpToSource(button.dataset.sourceRef);
 });
 $('attention-view').addEventListener('click', (event) => {
   const button = event.target.closest('[data-source-ref]');
   if (!button) return;
-  state.highlightedRef = button.dataset.sourceRef;
-  renderSource();
-  $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+  jumpToSource(button.dataset.sourceRef);
 });
 $('stage-strip').addEventListener('click', (event) => {
   const button = event.target.closest('[data-step]');
@@ -1033,9 +1106,25 @@ $('stage-strip').addEventListener('click', (event) => {
 $('inspector-content').addEventListener('click', (event) => {
   const button = event.target.closest('[data-source-ref]');
   if (!button) return;
-  state.highlightedRef = button.dataset.sourceRef;
-  renderSource();
-  $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+  jumpToSource(button.dataset.sourceRef);
+});
+$('gemm-mask-detail').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-source-ref]');
+  if (button) jumpToSource(button.dataset.sourceRef);
+});
+document.querySelector('.detail-tabs').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-detail-tab]');
+  if (button) openDetailTab(button.dataset.detailTab);
+});
+document.querySelector('.detail-tabs').addEventListener('keydown', (event) => {
+  if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  const buttons = [...document.querySelectorAll('[data-detail-tab]')].filter((node) => getComputedStyle(node).display !== 'none');
+  const index = buttons.findIndex((node) => node.dataset.detailTab === state.detailTab);
+  const next = buttons[(index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length];
+  if (!next) return;
+  event.preventDefault();
+  openDetailTab(next.dataset.detailTab);
+  next.focus();
 });
 $('source-explainer').addEventListener('click', (event) => {
   const button = event.target.closest('[data-source-ref]');

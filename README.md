@@ -72,6 +72,7 @@ op-show serve examples --port 8765
 
 ## What the viewer shows
 
+- **同屏工作台 / Compact workbench.** 在 1440×900 桌面视口，PID 认领、主矩阵和播放控件同屏；右侧“摘要 / 地址 / 逐格 / 任务 / 源码”按需切换。GEMM 的 C tile 可直接在结果矩阵里选取，A/B 依赖随之联动；QKV 的 Producer 与 Consumer 并排，路径显示在矩阵上方。较长矩阵在面板内滚动；手机改为纵向布局和 Producer/Consumer 标签。布局依据见 [调研记录](docs/research-compact-workbench.md)。
 - **Launch and PID claims first.** The first panel expands the source-backed launch grid into PID lanes and shows which output tasks each PID claims in order. Select a claim to highlight its output tile, input group, source references, and logical stage. Tensor Core GEMM shows one CUDA block per C tile with a serial K loop. The GQA pair makes the tradeoff concrete: 8 Q-owned PIDs each handle one output tile, while 2 KV-owned PIDs each handle four Q output tiles serially for the illustrative 4-Q-head/2-KV-head shape. This is a claim diagram, not a measured performance comparison.
 - **Output tile grid.** One card per logical output tile, with its owning worker, bounds, valid/masked cell counts, dependencies, and current stage. The grid is one tab stop; arrow keys move the selection, Home/End jump within a row.
 - **Tensor Core GEMM dependencies and slices.** In the WMMA example, full A[M,K], B[K,N], and C[M,N] matrices form a 2×2 dependency map. Select a C tile and advance the K loop: A's row band and B's column band stay tied to that output while their highlighted intersections move. The cell view below shows exact tile masks; solid cells are valid, striped cells are zero-filled or skipped at output.

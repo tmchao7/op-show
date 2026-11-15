@@ -119,6 +119,13 @@ const TraceView = (() => {
     ];
     $t('trace-path').innerHTML=`<div class="trace-path-summary"><span>${h(label(x))}</span><strong>${w(route?'direct':'peer_store')}</strong></div><div class="trace-path-steps">${path.map((step,i)=>`<div class="trace-path-node ${done(`${x.id}:${step.kind}`)?'done':''}"><span class="trace-path-number">${i+1}</span><div><span class="trace-path-title">${h(step.title)}</span><strong>${h(step.value)}</strong><small>${h(step.sub)}</small></div></div>`).join('<span class="trace-path-arrow">↓</span>')}</div>`;
   }
+  function renderCompactRoute() {
+    const x=task(); if(!x) return;
+    const nodes=[`P${String(x.producer_logical).padStart(2,'0')} / pid ${x.producer_pid}`,
+      x.route==='local'?w('direct'):`peer_mem · slot ${x.signal_slot}`,
+      x.route==='local'?`${tensor}_out`:`C${String(x.consumer_logical).padStart(2,'0')} / pid ${x.consumer_pid} → ${tensor}_out`];
+    $t('trace-route-compact').innerHTML=`<strong>${h(label(x))}</strong><span>flat_idx ${x.flat_idx} · ${w('wave')} ${x.wave+1}</span><div>${nodes.map((node,i)=>`<span>${h(node)}</span>${i<nodes.length-1?'<b aria-hidden="true">→</b>':''}`).join('')}</div>`;
+  }
   function renderPlayer() {
     const s=scenario, current=task();
     $t('trace-percent').textContent=`${Math.round(s.events.filter(e=>e.level<tick).length/s.events.length*100)}%`;
@@ -151,7 +158,7 @@ const TraceView = (() => {
     const offsetCards=[
       ['input_offset',x.input_offset],['peer_q',x.peer_offsets?.q],['peer_k',x.peer_offsets?.k],['peer_v',x.peer_offsets?.v],['signal_slot',x.signal_slot],['signal_offset',x.signal_offset],['output_offset',x.output_offset]
     ].filter(([,v])=>v!==null && v!==undefined).map(([key,value])=>`<div class="formula-card"><div class="formula-title">${h(key)} · ${w('offset')} ${value}</div><div class="formula-expr">${h(formulas[key])}</div><div class="formula-result">${h(substitutions(formulas[key]))} → <strong>${value}</strong></div><button class="formula-source" data-ref="${h(scenario.formula_refs[key])}">${w('jump')} ↗</button></div>`).join('');
-    $t('trace-detail-body').innerHTML=`<div class="trace-detail-grid"><div><div class="detail-table">${rows.map(([k,v])=>`<span class="key">${h(k)}</span><span class="value">${h(v)}</span>`).join('')}</div><h3>${w('tokens')} · ${x.valid_tokens}/${p.block_s}</h3><div class="trace-token-grid">${sample}</div></div><div class="trace-formulas">${offsetCards}</div></div>`;
+    $t('trace-detail-body').innerHTML=`<div class="trace-detail-grid"><div class="trace-detail-summary"><div class="detail-table">${rows.map(([k,v])=>`<span class="key">${h(k)}</span><span class="value">${h(v)}</span>`).join('')}</div></div><div class="trace-detail-mask"><h3>${w('tokens')} · ${x.valid_tokens}/${p.block_s}</h3><div class="trace-token-grid">${sample}</div></div><div class="trace-formulas">${offsetCards}</div></div>`;
   }
   function renderLegend() {
     $t('trace-note').textContent=`${model.note_zh && lang()==='zh'?model.note_zh:model.note} · ${w('example')}: R=${scenario.params.rank_size}, H=${scenario.params.heads_per_rank}, AIV=${scenario.params.total_cores}, S=${scenario.params.sequence_length}.`;
@@ -160,9 +167,9 @@ const TraceView = (() => {
   function render() {
     if(!scenario) return;
     syncPlayButton();
-    rankPickers(); renderLegend(); renderProducer(); renderClaims(); renderPath(); renderConsumer(); renderPlayer(); renderDetail();
+    rankPickers(); renderLegend(); renderProducer(); renderClaims(); renderPath(); renderCompactRoute(); renderConsumer(); renderPlayer(); renderDetail();
     document.querySelectorAll('[data-trace-tab]').forEach(node=>node.setAttribute('aria-selected',String(node.dataset.traceTab===tab)));
-    document.querySelectorAll('[data-trace-view]').forEach(node=>node.classList.toggle('trace-tab-hidden',node.dataset.traceView!==tab));
+    document.querySelectorAll('.trace-views [data-trace-view]').forEach(node=>node.classList.toggle('trace-tab-hidden',node.dataset.traceView!==tab));
   }
   function init(m,s,jump,language) {
     pause(); model=m; scenario=s; sourceJump=jump; lang=language;
@@ -171,7 +178,7 @@ const TraceView = (() => {
   }
   function scenarioChange(s) { pause(); scenario=s; eventMap=new Map(s.events.map(e=>[e.id,e])); taskMap=new Map(s.tasks.map(x=>[x.id,x])); selected=s.tasks[0]?.id; sourceRank=0;targetRank=0;tick=0;render(); }
   document.addEventListener('click', e=>{
-    const taskButton=e.target.closest('#trace-visualization [data-task]'); if(taskButton) return select(taskButton.dataset.task);
+    const taskButton=e.target.closest('#workbench-layout [data-task]'); if(taskButton && scenario) return select(taskButton.dataset.task);
     const tabButton=e.target.closest('[data-trace-tab]'); if(tabButton){tab=tabButton.dataset.traceTab;render();return;}
     const waveButton=e.target.closest('[data-wave]'); if(waveButton && scenario){const wave=Number(waveButton.dataset.wave); const item=scenario.tasks.find(x=>x.source_rank===sourceRank && x.target_rank===targetRank && x.wave===wave); if(item) selected=item.id; const first=Math.min(...scenario.events.filter(x=>x.wave===wave).map(x=>x.level)); pause();seek(first);return;}
     const eventButton=e.target.closest('[data-event]'); if(eventButton){pause();seek(ev(eventButton.dataset.event).level+1);sourceJump(ev(eventButton.dataset.event).source_ref,true);return;}

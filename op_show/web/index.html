@@ -32,6 +32,7 @@
 
         <section class="metric-row" id="metrics" aria-label="模型统计" data-i18n-aria-label="statistics"></section>
 
+        <div class="workbench-layout" id="workbench-layout">
         <div id="unknown-panel" hidden></div>
         <section id="visualization" class="workspace">
           <div class="main-column">
@@ -41,6 +42,7 @@
               <div id="ownership-claims" class="ownership-claims"></div>
               <p class="ownership-note" data-i18n="ownershipNote">同一 PID 内的任务按源码循环顺序执行；不同 PID 仅在没有声明依赖时可并行。这里不表示实际设备调度或耗时。</p>
             </section>
+            <div class="canvas-stack" id="canvas-stack">
             <section class="panel tile-panel">
               <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionTiles">01 / TILE 归属</div><h2 data-i18n="tileGrid">输出 tile 网格</h2></div><div class="legend"><span><i class="legend-dot pending"></i><span data-i18n="pending">待执行</span></span><span><i class="legend-dot running"></i><span data-i18n="active">进行中</span></span><span><i class="legend-dot done"></i><span data-i18n="complete">已完成</span></span><span><i class="legend-dot pad"></i><span data-i18n="tailMasked">尾部 / mask</span></span></div></div>
               <div class="grid-context" id="grid-context"></div>
@@ -71,6 +73,7 @@
               <div class="attention-recurrence" id="attention-recurrence"></div>
               <p class="playback-footnote" data-i18n="attentionMaskLegend">斜纹 Q/O 行属于尾块；K/V 的斜纹行超出 N，S 的对应列被设为 −∞。补齐的 Q 行不会写回 O。</p>
             </section>
+            </div>
 
             <section class="panel playback-panel">
               <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionExecution">02 / 理想化执行</div><h2 data-i18n="parallelTitle">无依赖的 tile 同时推进</h2></div><span class="progress-count" id="progress-count">0%</span></div>
@@ -85,6 +88,7 @@
               <div class="stage-heading"><span><span data-i18n="stageSequence">阶段顺序</span> <small data-i18n="serialWithinTile">tile 内依次执行</small></span><span id="current-stage"></span></div>
               <div class="stage-strip" id="stage-strip"></div>
               <p class="playback-footnote" data-i18n="progressNote">进度按已完成的 tile 阶段计算，不代表实际耗时或 GPU/NPU 利用率。</p>
+              <details class="timeline-drawer" id="timeline-drawer"><summary data-i18n="timelineTitle">全局长条时间线</summary></details>
             </section>
 
             <section class="panel timeline-panel" id="timeline-panel" hidden>
@@ -107,7 +111,8 @@
             <div class="trace-pickers"><label><span data-i18n="sourceRank">来源 Rank</span><select id="trace-source-rank"></select></label><label><span data-i18n="targetRank">目标 Rank</span><select id="trace-target-rank"></select></label><label><span data-i18n="tensor">输出张量</span><select id="trace-tensor"><option>Q</option><option>K</option><option>V</option></select></label></div>
           </div>
           <div class="trace-legend" id="trace-legend"></div>
-          <div class="trace-tabs" role="tablist" aria-label="Trace views"><button data-trace-tab="producer" role="tab" aria-selected="true" data-i18n="producerMatrix">Producer 数据矩阵</button><button data-trace-tab="claim" role="tab" aria-selected="false" data-i18n="claimTable">PID 认领表</button><button data-trace-tab="path" role="tab" aria-selected="false" data-i18n="peerPath">peer_mem 数据路径</button><button data-trace-tab="consumer" role="tab" aria-selected="false" data-i18n="consumerMatrix">Consumer 输出矩阵</button></div>
+          <div class="trace-route-compact" id="trace-route-compact"></div>
+          <div class="trace-tabs" role="tablist" aria-label="Trace views"><button data-trace-tab="producer" role="tab" aria-selected="true" data-i18n="producerMatrix">Producer 数据矩阵</button><button data-trace-tab="consumer" role="tab" aria-selected="false" data-i18n="consumerMatrix">Consumer 输出矩阵</button></div>
           <div class="trace-views">
             <section class="panel trace-panel" data-trace-view="producer"><div class="panel-head"><div><div class="section-kicker">02 / PRODUCER</div><h2 data-i18n="producerMatrix">Producer 数据矩阵</h2></div></div><p class="trace-description" data-i18n="producerHint">行是 block，列是目标 Rank 与 head group；颜色区分 G0–G4。</p><div class="trace-matrix-scroll"><div id="trace-producer"></div></div></section>
             <section class="panel trace-panel" data-trace-view="claim"><div class="panel-head"><div><div class="section-kicker">03 / PID</div><h2 data-i18n="claimTable">PID 认领表</h2></div></div><p class="trace-description" data-i18n="claimHint">每行一个 Producer PID；每列是本 Wave 中按步长 16 认领的任务。</p><div class="trace-matrix-scroll"><div id="trace-claims"></div></div></section>
@@ -118,10 +123,21 @@
           <section class="panel trace-detail"><div class="panel-head"><div><div class="section-kicker">07 / TILE</div><h2 id="trace-detail-title"></h2></div></div><div id="trace-detail-body"></div></section>
         </section>
 
+        <aside class="detail-rail panel" id="detail-rail">
+          <div class="detail-rail-head"><strong data-i18n="detailTitle">当前任务</strong><div class="detail-tabs" role="tablist" aria-label="详情视图" data-i18n-aria-label="detailTabs">
+            <button type="button" role="tab" data-detail-tab="summary" aria-selected="true" data-i18n="detailSummary">摘要</button>
+            <button type="button" role="tab" data-detail-tab="addresses" aria-selected="false" data-i18n="detailAddresses">地址</button>
+            <button type="button" role="tab" data-detail-tab="mask" aria-selected="false" data-i18n="detailMask">逐格</button>
+            <button type="button" role="tab" data-detail-tab="tasks" aria-selected="false" data-i18n="detailTasks">任务</button>
+            <button type="button" role="tab" data-detail-tab="source" aria-selected="false" data-i18n="detailSource">源码</button>
+          </div></div>
+          <div class="detail-rail-content" id="detail-rail-content"><div class="trace-task-detail" id="trace-task-detail"></div></div>
+        </aside>
         <section id="source-panel" class="panel source-panel">
           <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionSource">04 / 源码依据</div><h2 data-i18n="sourceTitle">映射依据来自哪里</h2></div><span id="source-path" class="source-path"></span></div>
           <div class="source-layout"><div class="source-explainer" id="source-explainer"></div><div class="code-scroll"><pre id="source-code"></pre></div></div>
         </section>
+        </div>
       </main>
       <footer>OP/SHOW <span>·</span> <span data-i18n="footerWalkthrough">基于源码的逻辑图解</span> <span>·</span> <span data-i18n="footerNoExecution">页面不会执行算子源码</span></footer>
     </div>
