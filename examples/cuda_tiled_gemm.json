@@ -32,6 +32,7 @@
       {"name": "M", "extent": "M", "size": "BM", "size_ref": "tile_m_const", "index": "wid_y", "source_ref": "tile_m"},
       {"name": "N", "extent": "N", "size": "BN", "size_ref": "tile_n_const", "index": "wid_x", "source_ref": "tile_n"}
     ],
+    "result_progress": {"loop_source_ref": "loop", "contribution_step": "compute"},
     "program": [
       {"repeat": "ceildiv(K, BK)", "loop_axis": "K", "loop_tile": "BK", "loop_source_ref": "loop", "steps": [
         {"id": "load", "label": "Load A/B tile", "label_zh": "加载 A/B tile", "source_ref": "load"},

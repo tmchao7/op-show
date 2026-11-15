@@ -110,6 +110,7 @@
         "source_ref": "d_tile"
       }
     ],
+    "result_progress": {"loop_source_ref": "loop", "contribution_step": "sum"},
     "program": [
       {
         "steps": [

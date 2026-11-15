@@ -30,7 +30,7 @@
 | 可视化色彩与图例 | [Carbon color palettes](https://www.carbondesignsystem.com/data-visualization/color-palettes/)、[Carbon chart anatomy](https://www.carbondesignsystem.com/data-visualization/chart-anatomy/) | 分类色/顺序色的区别、轴与图例、颜色不作为唯一编码。 |
 | 数据表可读性 | [Figr data table design](https://figr.design/blog/data-table-design)、[raw.studio 5 checks](https://raw.studio/blog/data-table-ux) | 上下文/冻结标识、粘性表头、语义结构、状态与可访问性。 |
 
-[Triton-Ascend 的 TileLens/Triton-Viz 讨论](https://github.com/triton-lang/triton-ascend/issues/1908)记录了相关工具在 Ascend 上的适配问题；引用时应核对 issue 的最新进展。本轮关于时间线、源码引用索引与分享链接的调研记录见 [docs/research-visualization.md](docs/research-visualization.md)，矩阵/表格化 UI 的调研记录见 [docs/research-ui-matrix.md](docs/research-ui-matrix.md)。
+[Triton-Ascend 的 TileLens/Triton-Viz 讨论](https://github.com/triton-lang/triton-ascend/issues/1908)记录了相关工具在 Ascend 上的适配问题；引用时应核对 issue 的最新进展。时间线、源码引用索引与分享链接的调研记录见 [docs/research-visualization.md](docs/research-visualization.md)，矩阵/表格化 UI 见 [docs/research-ui-matrix.md](docs/research-ui-matrix.md)，结果 Tile 归约进度色阶见 [docs/research-reduction-progress.md](docs/research-reduction-progress.md)。
 
 ## 源码约束与逻辑正确性
 
@@ -50,6 +50,7 @@
 
 ## 交付检查
 
+- 重大功能更新完成时同步检查并更新 `README.md` 的示例表、功能说明、截图或限制；若截图未重拍，明确标注其展示的是旧界面。
 - 每个示例核对规则尺寸与尾 tile、任务覆盖、地址和 mask；交互检查选中联动、播放/暂停、前后单步、拖动、Wave 跳转、Q/K/V 与源码定位。
 - 运行 `python3 -m unittest discover -s tests -v`、`node --check op_show/web/app.js`、`node --check op_show/web/trace.js`、`git diff --check`。新增校验逻辑时写能抓住真实错误的测试，并保留 v1 回归。
 - 交付时说明改了什么、参考了什么、实际验证了什么，以及尚未验证的边界。提交或推送遵循当前用户任务的授权与仓库流程。

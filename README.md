@@ -75,6 +75,7 @@ op-show serve examples --port 8765
 - **同屏工作台 / Compact workbench.** 在 1440×900 桌面视口，PID 认领、主矩阵和播放控件同屏；右侧“摘要 / 地址 / 逐格 / 任务 / 源码”按需切换。GEMM 的 C tile 可直接在结果矩阵里选取，A/B 依赖随之联动；QKV 的 Producer 与 Consumer 并排，路径显示在矩阵上方。较长矩阵在面板内滚动；手机改为纵向布局和 Producer/Consumer 标签。布局依据见 [调研记录](docs/research-compact-workbench.md)。
 - **Launch and PID claims first.** The first panel expands the source-backed launch grid into PID lanes and shows which output tasks each PID claims in order. Select a claim to highlight its output tile, input group, source references, and logical stage. Tensor Core GEMM shows one CUDA block per C tile with a serial K loop. The GQA pair makes the tradeoff concrete: 8 Q-owned PIDs each handle one output tile, while 2 KV-owned PIDs each handle four Q output tiles serially for the illustrative 4-Q-head/2-KV-head shape. This is a claim diagram, not a measured performance comparison.
 - **Output tile grid.** One card per logical output tile, with its owning worker, bounds, valid/masked cell counts, dependencies, and current stage. The grid is one tab stop; arrow keys move the selection, Home/End jump within a row.
+- **归约贡献色阶 / Reduction coverage.** GEMM、GEMV、按行归约、Attention 与 GQA 的输出区域随有效 K 或 Key 位置纳入计算而逐级加深，并同时显示精确的 `已处理 K 16/19` 等分数。尾部 mask 不计入已处理量；归约或在线状态达到 100% 后，后续规约、归一化和写回仍按独立阶段显示。色阶不代表结果数值、真实耗时或显存写回。模型字段见 [格式说明](docs/model-format.md)，设计依据见 [调研记录](docs/research-reduction-progress.md)。
 - **Tensor Core GEMM dependencies and slices.** In the WMMA example, full A[M,K], B[K,N], and C[M,N] matrices form a 2×2 dependency map. Select a C tile and advance the K loop: A's row band and B's column band stay tied to that output while their highlighted intersections move. The cell view below shows exact tile masks; solid cells are valid, striped cells are zero-filled or skipped at output.
 - **Row/K slices.** For Reduce and GEMV, the selected output row tile determines the X or A matrix rows, current K slice, optional x vector, and Y/y output rows. Stripes show skipped input cells and output rows.
 - **Attention slices.** The teaching FlashAttention-2 model follows one Q output row tile across successive K/V key slices. It draws logical Q/K/V/S/O matrices and the online softmax recurrence; S is not a stored global tensor.
@@ -87,6 +88,8 @@ op-show serve examples --port 8765
 Tensor Core WMMA 的尾块示例可直接检查 `M=27、N=21、K=19`：选中输出 `T[1,1]` 与第二个 K 分片，A/B/C 分别有 33/256、15/256、55/256 个有效单元。斜纹是边界零填充或跳过的元素；这只是源码约束的逻辑视图。
 
 ![Tensor Core WMMA GEMM 尾块：选中输出 T[1,1] 和第二个 K 分片](assets/op-show-tensor-core-tail.jpg)
+
+以上截图拍摄于归约贡献色阶加入之前；当前页面还会在结果区域显示逐轮加深的色阶与精确分数。
 
 The viewer opens in Chinese and has a 中文 / EN switch in the header. The choice is saved in the browser. Custom models can add the optional Chinese fields described in the [format guide](docs/model-format.md).
 

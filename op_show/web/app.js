@@ -34,6 +34,8 @@ const translations = {
     validAndMask: '有效单元 / MASK', cellsLegend: '实色单元在边界内；斜纹单元被 mask。',
     maskedTail: '{count} 个被 mask 的尾部单元不会写入输出。', noPadding: '此 tile 没有输出填充。',
     loopSlice: '{axis} 分片 {number}：{valid}/{total} 个有效元素。',
+    resultCoverage: '已处理 {axis} {processed}/{total}', resultCoverageShort: '{axis} {processed}/{total}',
+    resultPending: '后续阶段尚未完成', resultDone: '输出已完成',
     addressOffsets: '首元素地址偏移', offset: '偏移', viewSource: '查看源码行 ↗',
     noAddress: '未提供地址示例。', sourceEvidence: '依据，不是执行结果',
     sourceExplanation: '这些代码行与本地源码逐字对应。公式由 agent 提出，校验器检查描述与覆盖范围。使用前请对照源码复核公式。',
@@ -48,7 +50,7 @@ const translations = {
     traceHeading: '01 / 数据如何流动', traceTitle: '从 Producer Tile 到 Consumer 输出', sourceRank: '来源 Rank', targetRank: '目标 Rank', tensor: '输出张量', producerMatrix: 'Producer 数据矩阵', claimTable: 'PID 认领表', peerPath: 'peer_mem 数据路径', consumerMatrix: 'Consumer 输出矩阵', producerHint: '行是 block，列是目标 Rank 与 head group；颜色区分 G0–G4。', claimHint: '每行一个 Producer PID；每列是本 Wave 中按步长 16 认领的任务。', consumerHint: '行是来源 Rank 与 block，列是 head group；Q/K/V 使用相同坐标。', logicalEvents: '逻辑事件与依赖', traceTiming: '每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。',
     gemmTitle: 'C tile 依赖哪些 A / B 数据', gemmHint: '选中上方 C tile；沿时间轴查看 A 的行带与 B 的列带如何按 K 分片相乘并累加。矩阵面积表示逻辑坐标范围，不代表硬件耗时。', gemmMaskLegend: 'A/B 的斜纹格：越界后填零；C 的斜纹格：不写入输出。', gemmPhase: 'K 分片 {current}/{total}', gemmValid: '{count}/{total} 个有效元素',
     gemmDetailTitle: '当前分片 · 逐格检查', gemmDetailHint: '下方显示实际 tile 尺寸及边界 mask', gemmMapHint: '选中的 A 行带 × B 列带 → C tile；深色交点是当前 K 分片', gemmMapTail: '尾 tile：斜纹元素见下方逐格图',
-    rowkReduceTitle: '按行归约的数据分片', rowkGemvTitle: '矩阵向量乘的数据分片', rowkHint: '选择输出 tile，再沿时间轴查看当前 K 分片、有效输入和输出行。每个 warp 负责一行；格子是逻辑数据位置。', rowkMaskLegend: '斜纹输入格被边界条件跳过；斜纹输出行不会写回。',
+    rowkReduceTitle: '按行归约的数据分片', rowkGemvTitle: '矩阵向量乘的数据分片', rowkHint: '选择输出 tile，沿时间轴查看 K 分片。结果色阶表示已纳入的有效 K 位置；warp 规约前仅是局部和进度。', rowkMaskLegend: '斜纹输入格被边界条件跳过；斜纹输出行不会写回。',
     attentionTitle: '当前 Attention 数据分片', attentionHint: '选择输出 tile，再沿时间轴查看 Q 行块如何依次读取 K/V 分片、更新在线 softmax 状态并写出 O。', attentionMaskLegend: '斜纹 Q/O 行属于尾块；K/V 的斜纹行超出 N，S 的对应列被设为 −∞。补齐的 Q 行不会写回 O。', attentionPhase: 'Key 分片 {current}/{total}', attentionScores: 'S 是逻辑 QKᵀ 分数矩阵，不是全局内存张量。', attentionRecurrence: '在线 softmax：m′ = max(m, rowmax(S))；α = exp(m − m′)；l′ = αl + rowsum(exp(S − m′))；acc′ = αacc + P × V；O = acc / l。'
   },
   en: {
@@ -82,6 +84,8 @@ const translations = {
     validAndMask: 'VALID CELLS / MASK', cellsLegend: 'Solid cells = in bounds; striped cells = masked.',
     maskedTail: '{count} masked tail cells do not write output.', noPadding: 'No output padding in this tile.',
     loopSlice: '{axis} slice {number}: {valid}/{total} valid elements.',
+    resultCoverage: 'Processed {axis} {processed}/{total}', resultCoverageShort: '{axis} {processed}/{total}',
+    resultPending: 'Later stages pending', resultDone: 'Output complete',
     addressOffsets: 'ADDRESS OFFSETS · FIRST ELEMENT', offset: 'offset', viewSource: 'View source line ↗',
     noAddress: 'No address sample provided.', sourceEvidence: 'Evidence, not execution',
     sourceExplanation: 'These lines are literal matches to the local source. The agent proposes the formulas; the validator checks the model and coverage. Review the formulas against the source before relying on them.',
@@ -96,7 +100,7 @@ const translations = {
     traceHeading: '01 / DATA FLOW', traceTitle: 'Producer tiles to Consumer output', sourceRank: 'SOURCE RANK', targetRank: 'TARGET RANK', tensor: 'OUTPUT TENSOR', producerMatrix: 'Producer data matrix', claimTable: 'PID claim table', peerPath: 'peer_mem data path', consumerMatrix: 'Consumer output matrix', producerHint: 'Rows are blocks; columns are target ranks and head groups. G0–G4 colors identify data groups.', claimHint: 'Each row is one Producer PID; columns show stride-16 claims in this wave.', consumerHint: 'Rows are source ranks and blocks; columns are head groups. Q/K/V share coordinates.', logicalEvents: 'Logical events and dependencies', traceTiming: 'Each step completes all events with satisfied dependencies. A wave is not a global PID barrier or device time.',
     gemmTitle: 'Which A / B data feeds this C tile', gemmHint: 'Select a C tile above. Step through K slices to see an A row band and B column band multiply and accumulate. Matrix area shows logical coordinates, not hardware time.', gemmMaskLegend: 'Striped A/B cells are zero-filled; striped C cells are not stored.', gemmPhase: 'K slice {current}/{total}', gemmValid: '{count}/{total} valid elements',
     gemmDetailTitle: 'Current slices · cell inspection', gemmDetailHint: 'Actual tile size and boundary masks appear below', gemmMapHint: 'Selected A row band × B column band → C tile; dark intersection is the current K slice', gemmMapTail: 'Tail tile: see striped cells in the detail below',
-    rowkReduceTitle: 'Row reduction data slices', rowkGemvTitle: 'Matrix-vector data slices', rowkHint: 'Select an output tile, then follow the timeline through each K slice, valid input, and output row. Each warp owns one row; cells show logical data positions.', rowkMaskLegend: 'Striped input cells are skipped by bounds checks; striped output rows are not stored.',
+    rowkReduceTitle: 'Row reduction data slices', rowkGemvTitle: 'Matrix-vector data slices', rowkHint: 'Select an output tile and step through K slices. Result shade means valid K positions processed; before warp reduction it shows local-sum progress only.', rowkMaskLegend: 'Striped input cells are skipped by bounds checks; striped output rows are not stored.',
     attentionTitle: 'Current Attention data slices', attentionHint: 'Select an output tile, then follow each K/V slice as the Q rows update online softmax state and write O.', attentionMaskLegend: 'Striped Q/O rows are tail rows; striped K/V rows exceed N and their S columns become −∞. Padded Q rows are not stored to O.', attentionPhase: 'Key slice {current}/{total}', attentionScores: 'S is the logical QKᵀ score matrix, not a global-memory tensor.', attentionRecurrence: 'Online softmax: m′ = max(m, rowmax(S)); α = exp(m − m′); l′ = αl + rowsum(exp(S − m′)); acc′ = αacc + P × V; O = acc / l.'
   }
 };
@@ -203,6 +207,7 @@ function buildRefIndex(model) {
       add(step.source_ref, `step ${step.id}`);
       add(step.loop_source_ref, `loop ${step.loop_axis || ''}`.trim());
     }
+    add(scenario?.result_progress?.loop_source_ref, 'result coverage loop');
     for (const address of scenario?.tiles?.[0]?.addresses || []) {
       add(address.source_ref, `address ${displayLabel(address)}`);
     }
@@ -380,6 +385,29 @@ function tileState(tile) {
   return 'active';
 }
 
+function resultProgress(scenario, tile) {
+  const definition = scenario?.result_progress;
+  if (!definition || !tile) return null;
+  let processed = 0;
+  for (const point of definition.checkpoints) {
+    if (state.tick > tile.start + point.step_index) processed = point.processed;
+    else break;
+  }
+  const level = Math.round(processed / definition.extent * 6);
+  return {axis: definition.axis, processed, total: definition.extent,
+    shade: `${level * 7}%`, done: tileState(tile) === 'done'};
+}
+
+function resultStyle(progress) {
+  return progress ? ` style="--result-shade:${progress.shade}"` : '';
+}
+
+function resultLabel(progress, short = false) {
+  if (!progress) return '';
+  return t(short ? 'resultCoverageShort' : 'resultCoverage',
+    {axis: progress.axis, processed: progress.processed, total: progress.total});
+}
+
 function stepIndex(tile) {
   const scenario = currentScenario();
   if (!scenario || !tile) return -1;
@@ -521,11 +549,13 @@ function renderGrid() {
     const tail = tile.valid_cells < tile.total_cells;
     const isSelected = tileKey(tile) === state.selected;
     const progress = Math.max(0, Math.min(1, (state.tick - tile.start) / tile.step_count));
+    const result = resultProgress(scenario, tile);
     const range = tile.bounds.map((bound) => `${bound.axis}[${bound.start}:${bound.end}]`).join(' · ');
     const statusLabel = t(status === 'done' ? 'complete' : status);
-    return `<button type="button" tabindex="${isSelected ? '0' : '-1'}" class="tile-card ${status} ${tail ? 'tail' : ''} ${isSelected ? 'selected' : ''}" data-tile="${tileKey(tile)}" aria-label="${escapeHtml(tileLabel(tile))}, ${escapeHtml(range)}, ${statusLabel}">
+    return `<button type="button" tabindex="${isSelected ? '0' : '-1'}" class="tile-card ${status} ${tail ? 'tail' : ''} ${isSelected ? 'selected' : ''} ${result ? 'has-result-progress' : ''}"${resultStyle(result)} data-tile="${tileKey(tile)}" aria-label="${escapeHtml(tileLabel(tile))}, ${escapeHtml(range)}, ${statusLabel}${result ? `, ${escapeHtml(resultLabel(result))}` : ''}">
       <span class="tile-card-top"><span class="tile-id">${escapeHtml(tileLabel(tile))}</span><span class="tile-card-status">${statusLabel}</span></span>
       <span class="tile-card-sub">${escapeHtml(range)}</span><span class="tile-card-sub">${tile.valid_cells}/${tile.total_cells} ${t('validCells')}</span>
+      ${result ? `<span class="tile-card-result">${escapeHtml(resultLabel(result))}</span>` : ''}
       <span class="tile-card-progress" style="width:${Math.round(progress * 100)}%"></span></button>`;
   }).join('');
   const independent = scenario.tiles.filter((tile) => !tile.dependencies.length).length;
@@ -604,7 +634,9 @@ function renderGemmView() {
     const outputTiles = name === 'C' ? scenario.tiles.map((item) => {
       const [row, col] = item.bounds;
       const picked = tileKey(item) === state.selected;
-      return `<button type="button" class="gemm-output-tile ${tileState(item)} ${picked ? 'selected' : ''}" data-gemm-tile="${tileKey(item)}" tabindex="${picked ? 0 : -1}" aria-pressed="${picked}" aria-label="${escapeHtml(tileLabel(item))}, ${row.axis}[${row.start}:${row.end}) × ${col.axis}[${col.start}:${col.end})" style="top:${percentage(row.start, rows)};left:${percentage(col.start, cols)};height:${percentage(row.end - row.start, rows)};width:${percentage(col.end - col.start, cols)}">${escapeHtml(tileLabel(item))}</button>`;
+      const result = resultProgress(scenario, item);
+      const status = tileState(item);
+      return `<button type="button" class="gemm-output-tile ${status} ${picked ? 'selected' : ''} ${result ? 'has-result-progress' : ''}" data-gemm-tile="${tileKey(item)}" tabindex="${picked ? 0 : -1}" aria-pressed="${picked}" aria-label="${escapeHtml(tileLabel(item))}, ${row.axis}[${row.start}:${row.end}) × ${col.axis}[${col.start}:${col.end}), ${t(status === 'done' ? 'complete' : status)}${result ? `, ${escapeHtml(resultLabel(result))}` : ''}" style="top:${percentage(row.start, rows)};left:${percentage(col.start, cols)};height:${percentage(row.end - row.start, rows)};width:${percentage(col.end - col.start, cols)}${result ? `;--result-shade:${result.shade}` : ''}">${escapeHtml(tileLabel(item))}${result ? `<small>${status === 'done' ? '✓ ' : ''}${escapeHtml(resultLabel(result, true))}</small>` : ''}</button>`;
     }).join('') : '';
     return `<div class="gemm-map-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}">
       <div class="gemm-map-heading"><strong>${name}</strong><span>${rows} × ${cols}</span></div>
@@ -634,6 +666,7 @@ function renderGemmView() {
       {row: m.start, col: n.start, height: m.end - m.start, width: n.end - n.start},
       {row: m.start, col: n.start, height: m.end - m.start, width: n.end - n.start}, view.source_refs.c)}`;
   function matrix(name, rowStart, colStart, rows, cols, rowEnd, colEnd, rowAxis, colAxis, ref) {
+    const result = name === 'C' ? resultProgress(scenario, tile) : null;
     let cells = '';
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const valid = rowStart + r < rowEnd && colStart + c < colEnd;
@@ -643,14 +676,14 @@ function renderGemmView() {
     const count = (rowEnd - rowStart) * (colEnd - colStart);
     const rowLabel = `${rowAxis}[${rowStart}:${rowEnd})`;
     const colLabel = `${colAxis}[${colStart}:${colEnd})`;
-    return `<div class="gemm-matrix-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}" data-matrix="${name}">
+    return `<div class="gemm-matrix-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''} ${result ? 'has-result-progress' : ''}"${resultStyle(result)} data-matrix="${name}">
       <div class="gemm-matrix-top"><strong>${name}</strong><button type="button" data-source-ref="${escapeHtml(ref)}">L${state.model.refs[ref].line} ↗</button></div>
       <div class="matrix-frame gemm-matrix-frame">
         <span class="matrix-axis col">${escapeHtml(colLabel)}</span>
         <span class="matrix-axis row">${escapeHtml(rowLabel)}</span>
-        <div class="gemm-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}">${cells}</div>
+        <div class="gemm-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}${result ? `, ${escapeHtml(resultLabel(result))}` : ''}">${cells}</div>
       </div>
-      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}</div></div>`;
+      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}${result ? ` · ${escapeHtml(resultLabel(result))}${result.processed === result.total ? ` · ${t(result.done ? 'resultDone' : 'resultPending')}` : ''}` : ''}</div></div>`;
   }
   $('gemm-matrices').innerHTML = [
     matrix('A', m.start, kStart, m.tile_end - m.start, view.k_size, m.end, kEnd,
@@ -684,6 +717,7 @@ function renderRowKView() {
   });
 
   function card(name, matrixRole, rowStart, colStart, rows, cols, rowEnd, colEnd, rowAxis, colAxis, ref) {
+    const result = matrixRole === 'output' ? resultProgress(scenario, tile) : null;
     let cells = '';
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const valid = rowStart + r < rowEnd && colStart + c < colEnd;
@@ -694,11 +728,11 @@ function renderRowKView() {
     const count = (rowEnd - rowStart) * (colEnd - colStart);
     const rowLabel = rowAxis ? `${rowAxis}[${rowStart}:${rowEnd})` : '';
     const colLabel = colAxis ? `${colAxis}[${colStart}:${colEnd})` : '';
-    return `<div class="gemm-matrix-card rowk-card ${matrixRole} ${role.includes(matrixRole) ? 'focused' : ''}">
+    return `<div class="gemm-matrix-card rowk-card ${matrixRole} ${role.includes(matrixRole) ? 'focused' : ''} ${result ? 'has-result-progress' : ''}"${resultStyle(result)}>
       <div class="gemm-matrix-top"><strong>${name}</strong><button type="button" data-source-ref="${escapeHtml(ref)}">L${state.model.refs[ref].line} ↗</button></div>
       <div class="matrix-frame gemm-matrix-frame"><span class="matrix-axis col">${escapeHtml(colLabel)}</span><span class="matrix-axis row">${escapeHtml(rowLabel)}</span>
-      <div class="gemm-cell-grid rowk-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}">${cells}</div></div>
-      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}</div></div>`;
+      <div class="gemm-cell-grid rowk-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}${result ? `, ${escapeHtml(resultLabel(result))}` : ''}">${cells}</div></div>
+      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}${result ? ` · ${escapeHtml(resultLabel(result))}${result.processed === result.total ? ` · ${t(result.done ? 'resultDone' : 'resultPending')}` : ''}` : ''}</div></div>`;
   }
   const matrix = card(gemv ? 'A' : 'X', 'matrix', row.start, kStart,
     row.tile_end - row.start, view.k_size, row.end, kEnd,
@@ -730,6 +764,7 @@ function renderAttentionView() {
   });
 
   function card(name, rowStart, colStart, rows, cols, rowEnd, colEnd, rowAxis, colAxis, ref) {
+    const result = name === 'O' ? resultProgress(scenario, tile) : null;
     let cells = '';
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const valid = rowStart + r < rowEnd && colStart + c < colEnd;
@@ -737,11 +772,11 @@ function renderAttentionView() {
       cells += `<span class="gemm-cell ${valid ? '' : 'masked'}" title="${escapeHtml(coordinate)} · ${t(valid ? 'validCell' : 'maskedCell')}"></span>`;
     }
     const count = (rowEnd - rowStart) * (colEnd - colStart);
-    return `<div class="gemm-matrix-card attention-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}">
+    return `<div class="gemm-matrix-card attention-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''} ${result ? 'has-result-progress' : ''}"${resultStyle(result)}>
       <div class="gemm-matrix-top"><strong>${name}</strong><button type="button" data-source-ref="${escapeHtml(ref)}">L${state.model.refs[ref].line} ↗</button></div>
       <div class="matrix-frame gemm-matrix-frame"><span class="matrix-axis col">${escapeHtml(colAxis)}[${colStart}:${colEnd})</span><span class="matrix-axis row">${escapeHtml(rowAxis)}[${rowStart}:${rowEnd})</span>
-      <div class="gemm-cell-grid attention-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}">${cells}</div></div>
-      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}</div></div>`;
+      <div class="gemm-cell-grid attention-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}${result ? `, ${escapeHtml(resultLabel(result))}` : ''}">${cells}</div></div>
+      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}${result ? ` · ${escapeHtml(resultLabel(result))}${result.processed === result.total ? ` · ${t(result.done ? 'resultDone' : 'resultPending')}` : ''}` : ''}</div></div>`;
   }
   $('attention-matrices').innerHTML = [
     card('Q', m.start, d.start, m.tile_end - m.start, d.tile_end - d.start,

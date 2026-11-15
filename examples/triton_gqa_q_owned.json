@@ -39,6 +39,14 @@
         "line": 35,
         "contains": "acc = tl.dot(prob.to(tl.float16), v, acc)"
       },
+      "row_sum": {
+        "line": 36,
+        "contains": "row_sum = row_sum * scale_old + tl.sum(prob, 1)"
+      },
+      "row_max": {
+        "line": 37,
+        "contains": "row_max = next_max"
+      },
       "store": {
         "line": 39,
         "contains": "tl.store(O + q_head * M * D"
@@ -95,6 +103,7 @@
         "source_ref": "pid_h"
       }
     ],
+    "result_progress": {"loop_source_ref": "key_loop", "contribution_step": "row-max"},
     "program": [
       {
         "steps": [
@@ -135,6 +144,18 @@
             "label": "Accumulate weighted V",
             "label_zh": "累加加权 V",
             "source_ref": "accumulate"
+          },
+          {
+            "id": "row-sum",
+            "label": "Update row sums",
+            "label_zh": "更新行归一化分母",
+            "source_ref": "row_sum"
+          },
+          {
+            "id": "row-max",
+            "label": "Finish key-block state",
+            "label_zh": "完成当前 Key 分片状态",
+            "source_ref": "row_max"
           }
         ]
       },

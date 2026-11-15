@@ -21,6 +21,8 @@
   --matrix-gap: 2px;
   --surface-muted: #f7efe6;
   --surface-sunken: #fbf5ec;
+  --result-base: #fff5e9;
+  --result-accent: #b85437;
   --shadow-panel: 0 1px 2px #704a2908, 0 10px 26px #704a2908;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -954,6 +956,22 @@ footer span { margin: 0 8px; color: #bda895; }
 .gemm-output-tile.selected { z-index: 3; outline: 3px solid var(--text); outline-offset: -3px; background: #91af71d9; }
 .gemm-output-tile:hover { z-index: 4; box-shadow: inset 0 0 0 2px var(--primary-deep); }
 .gemm-output-tile:focus-visible { outline: 3px solid var(--primary-deep); outline-offset: 2px; }
+/* One discrete shade per completed reduction fraction; the fraction stays visible as text. */
+.tile-card.has-result-progress,
+.gemm-output-tile.has-result-progress {
+  background: color-mix(in oklab, var(--result-base), var(--result-accent) var(--result-shade));
+  color: var(--text);
+}
+.tile-card.has-result-progress.done,
+.gemm-output-tile.has-result-progress.done { border-color: var(--sage); }
+.tile-card-result { display: block; margin-top: 4px; color: var(--text); font: 700 9px/1.3 var(--mono); }
+.gemm-output-tile.has-result-progress { grid-template-rows: auto auto; align-content: center; line-height: 1.1; }
+.gemm-output-tile small { font: 700 8px/1.1 var(--mono); }
+.gemm-matrix-card.has-result-progress .gemm-cell:not(.masked) {
+  border-color: color-mix(in oklab, var(--line-strong), var(--result-accent) 40%);
+  background: color-mix(in oklab, var(--result-base), var(--result-accent) var(--result-shade));
+}
+.gemm-matrix-card.has-result-progress .gemm-matrix-valid { color: var(--text); }
 .trace-route-compact { display: flex; align-items: center; gap: 7px 12px; min-width: 0; padding: 6px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-sunken); font: 600 9px var(--mono); }
 .trace-route-compact > strong { color: var(--primary-deep); white-space: nowrap; }
 .trace-route-compact > span { color: var(--soft); white-space: nowrap; }

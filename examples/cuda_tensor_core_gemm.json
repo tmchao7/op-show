@@ -131,6 +131,7 @@
         "source_ref": "tile_n"
       }
     ],
+    "result_progress": {"loop_source_ref": "loop", "contribution_step": "mma"},
     "program": [
       {
         "repeat": "ceildiv(K, BK)",

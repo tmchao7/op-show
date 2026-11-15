@@ -115,6 +115,37 @@ def _steps(program, params, refs):
     return result
 
 
+def _result_progress(declaration, program, params, refs, steps):
+    if declaration is None:
+        return None
+    _require(isinstance(declaration, dict) and set(declaration) == {"loop_source_ref", "contribution_step"},
+             "mapping.result_progress requires loop_source_ref and contribution_step")
+    loop_ref = _evidence(declaration["loop_source_ref"], refs, "mapping.result_progress.loop_source_ref")
+    step_id = declaration["contribution_step"]
+    _require(isinstance(step_id, str) and step_id, "mapping.result_progress.contribution_step is required")
+    matches = [(index, group) for index, group in enumerate(program)
+               if group.get("loop_source_ref") == loop_ref]
+    _require(len(matches) == 1, "mapping.result_progress.loop_source_ref must identify exactly one loop group")
+    group_index, group = matches[0]
+    _require(group.get("loop_axis") in params and group.get("loop_tile") in params,
+             "mapping.result_progress must identify a declared reduction loop")
+    contributions = [index for index, step in enumerate(group["steps"]) if step["id"] == step_id]
+    _require(len(contributions) == 1,
+             "mapping.result_progress.contribution_step must occur exactly once per loop iteration")
+    extent, size = params[group["loop_axis"]], params[group["loop_tile"]]
+    repeat = -(-extent // size)
+    offset = sum(len(item["steps"]) * _number(item.get("repeat", "1"), params,
+                                               f"program[{index}].repeat")
+                 for index, item in enumerate(program[:group_index]))
+    checkpoints = [{"step_index": offset + iteration * len(group["steps"]) + contributions[0],
+                    "processed": min(extent, (iteration + 1) * size)}
+                   for iteration in range(repeat)]
+    _require(checkpoints[-1]["step_index"] < len(steps), "mapping.result_progress checkpoint outside program")
+    return {"axis": group["loop_axis"], "extent": extent, "size": size,
+            "loop_source_ref": loop_ref, "contribution_step": step_id,
+            "checkpoints": checkpoints}
+
+
 def _address_samples(addresses, env, refs, phase_count):
     _require(isinstance(addresses, list), "mapping.addresses must be a list")
     result = []
@@ -378,6 +409,7 @@ def _validate_model(path):
                               "count": group_count, "source_ref": group["source_ref"],
                               "member_axis": group.get("member_axis")}
         steps = _steps(mapping.get("program"), params, refs)
+        result_progress = _result_progress(mapping.get("result_progress"), mapping["program"], params, refs, steps)
         phase_count = max((step["iteration"] for step in steps if step["iteration"] is not None), default=0) + 1
         addresses = mapping.get("addresses", [])
         if isinstance(addresses, list):
@@ -424,6 +456,16 @@ def _validate_model(path):
                                   "n_extent": n_extent, "n_size": n_size,
                                   "source_refs": attention_view["source_refs"],
                                   "step_roles": attention_view["step_roles"]}
+        if result_progress is not None:
+            view_extent = (view_scenario["k_extent"] if view_scenario else
+                           row_k_scenario["k_extent"] if row_k_scenario else
+                           attention_scenario["n_extent"] if attention_scenario else None)
+            view_size = (view_scenario["k_size"] if view_scenario else
+                         row_k_scenario["k_size"] if row_k_scenario else
+                         attention_scenario["n_size"] if attention_scenario else None)
+            _require(view_extent is None or (view_extent, view_size) ==
+                     (result_progress["extent"], result_progress["size"]),
+                     f"{scenario_id}: result_progress loop must match the output view reduction axis")
         tiles = []
         lookup = {}
         for z, y, x in itertools.product(range(grid_sizes["z"]), range(grid_sizes["y"]), range(grid_sizes["x"])):
@@ -476,6 +518,7 @@ def _validate_model(path):
                                    "steps": steps, "tiles": tiles, "gemm_view": view_scenario,
                                    "row_k_view": row_k_scenario,
                                    "attention_view": attention_scenario,
+                                   "result_progress": result_progress,
                                    "total_ticks": max(tile["end"] for tile in tiles)})
     base["scenarios"].sort(key=lambda item: 0 if item["id"] == "aligned" else 1)
     return base, source_text

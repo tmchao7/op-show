@@ -62,6 +62,7 @@
         "source_ref": "tile"
       }
     ],
+    "result_progress": {"loop_source_ref": "loop", "contribution_step": "accumulate"},
     "program": [
       {
         "repeat": "ceildiv(K, BK)",

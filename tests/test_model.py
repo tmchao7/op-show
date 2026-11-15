@@ -31,9 +31,9 @@ class ModelTests(unittest.TestCase):
                                 key=lambda tile: tile["claim_index"])
                 self.assertEqual([tile["coords"] for tile in claims],
                                  [[0, pid * 2], [1, pid * 2], [0, pid * 2 + 1], [1, pid * 2 + 1]])
-                self.assertEqual([tile["start"] for tile in claims], [0, 10, 20, 30])
+                self.assertEqual([tile["start"] for tile in claims], [0, 14, 28, 42])
                 self.assertTrue(all(tile["task_group"] == pid for tile in claims))
-        self.assertEqual(kv_model["scenarios"][1]["total_ticks"], 40)
+        self.assertEqual(kv_model["scenarios"][1]["total_ticks"], 56)
         self.assertEqual([step["loop_valid"] for step in kv_model["scenarios"][1]["steps"]
                           if step["id"] == "load-kv"], [16, 5])
 
@@ -286,6 +286,7 @@ class ModelTests(unittest.TestCase):
                 scenario["params"].update(M=2000, N=2000, BM=2000, BN=2000, K=1, BK=1)
         self._invalid(huge_cells, "cell budget")
         def address_budget(doc):
+            doc["mapping"].pop("result_progress")
             doc["mapping"]["program"] = [{
                 "repeat": "ceildiv(K, BK)", "loop_axis": "K", "loop_tile": "BK",
                 "loop_source_ref": "loop",
@@ -324,9 +325,6 @@ class ModelTests(unittest.TestCase):
     def test_single_k_slice_gemm_view_is_valid(self):
         document = json.loads((EXAMPLES / "cuda_tensor_core_gemm.json").read_text())
         document["source"]["path"] = str(EXAMPLES / "sources/cuda_tensor_core_gemm.cu")
-        group = document["mapping"]["program"][0]
-        for key in ("repeat", "loop_axis", "loop_tile", "loop_source_ref"):
-            group.pop(key, None)
         for scenario in document["scenarios"]:
             scenario["params"]["K"] = 16
         with tempfile.TemporaryDirectory() as directory:
@@ -336,6 +334,43 @@ class ModelTests(unittest.TestCase):
             steps = model["scenarios"][0]["steps"]
             self.assertTrue(all(step["iteration"] is None for step in steps))
             self.assertEqual(model["scenarios"][0]["gemm_view"]["k_size"], 16)
+            self.assertEqual(model["scenarios"][0]["result_progress"]["checkpoints"],
+                             [{"step_index": 3, "processed": 16}])
+
+    def test_result_progress_counts_only_completed_valid_reduction_positions(self):
+        cases = (
+            ("cuda_tensor_core_gemm", [16, 19], "K"),
+            ("cuda_tiled_gemm", [4, 5], "K"),
+            ("triton_cuda_matmul", [16, 27], "K"),
+            ("cuda_warp_reduce", [32, 37], "K"),
+            ("cuda_warp_gemv", [32, 37], "K"),
+            ("triton_flash_attention2", [16, 21], "N"),
+            ("triton_gqa_q_owned", [16, 21], "N"),
+            ("triton_gqa_kv_owned", [16, 21], "N"),
+        )
+        for name, processed, axis in cases:
+            with self.subTest(name=name):
+                model, _ = validate_model(EXAMPLES / f"{name}.json")
+                scenario = model["scenarios"][1]
+                progress = scenario["result_progress"]
+                self.assertEqual(progress["axis"], axis)
+                self.assertEqual([point["processed"] for point in progress["checkpoints"]], processed)
+                self.assertEqual(scenario["steps"][progress["checkpoints"][-1]["step_index"]]["id"],
+                                 progress["contribution_step"])
+                aligned = model["scenarios"][0]["result_progress"]
+                self.assertEqual(aligned["checkpoints"][-1]["processed"], aligned["extent"])
+        add_model, _ = validate_model(EXAMPLES / "triton_ascend_add.json")
+        self.assertIsNone(add_model["scenarios"][0]["result_progress"])
+
+    def test_result_progress_rejects_unproven_or_ambiguous_checkpoints(self):
+        self._invalid(lambda doc: doc["mapping"]["result_progress"].update(loop_source_ref="missing"),
+                      "missing source evidence ref")
+        self._invalid(lambda doc: doc["mapping"]["result_progress"].update(contribution_step="missing"),
+                      "exactly once")
+        def duplicate_step(doc):
+            doc["mapping"]["program"][0]["steps"].append(
+                dict(doc["mapping"]["program"][0]["steps"][2]))
+        self._invalid(duplicate_step, "exactly once")
 
     def test_unknown_mapping_has_no_playable_scenarios(self):
         document = json.loads((EXAMPLES / "cuda_tiled_gemm.json").read_text())
