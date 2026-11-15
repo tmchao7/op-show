@@ -6,7 +6,7 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => (
 const translations = {
   zh: {
     topCaption: '无需硬件的算子图解', local: '本地', eyebrow: '源码 → TILE 映射 → 执行',
-    heroLead: '看清每个 tile', heroAccent: '如何工作。',
+    workspaceTitle: 'Tile 执行图解',
     intro: '从 program 或 block ID 找到它负责的数据，再逐步查看哪些 tile 可以并行、哪些阶段必须依次执行。',
     logical: '逻辑执行进度', logicalNote: '无依赖的 tile 同时推进。时间轴展示依赖关系，不代表设备耗时。',
     settings: '可视化设置', operator: '算子', inputShape: '输入形状', statistics: '模型统计',
@@ -21,7 +21,7 @@ const translations = {
     metricShape: '输入形状', metricTileSize: 'TILE 大小', metricOutputTiles: '输出 TILE',
     metricMasked: 'MASK 单元', elements: '个元素', workItems: '个逻辑工作项',
     tailPadding: '尾 tile 填充', fullyAligned: '完全整除', tiles: '个 tile',
-    workers: '个执行单元', validCells: '个有效单元', gridParallel: '{count} 个 tile 可并行启动',
+    workers: '个执行单元', validCells: '个有效单元', axisRows: '行', axisCols: '列', gridParallel: '{count} 个 tile 可并行启动',
     gridHint: '点击 tile 查看归属与地址偏移 ↗', waiting: '等待依赖', stageComplete: '已完成',
     seekTo: '跳转到 {label}', stepNumber: '第 {number} 步',
     tooManyCells: 'tile 太大，无法逐格展示；上方列出了范围与数量。',
@@ -35,13 +35,22 @@ const translations = {
     noAddress: '未提供地址示例。', sourceEvidence: '依据，不是执行结果',
     sourceExplanation: '这些代码行与本地源码逐字对应。公式由 agent 提出，校验器检查描述与覆盖范围。使用前请对照源码复核公式。',
     mappingUnknown: '映射未知：{note}。已禁用播放。', loadError: '无法加载描述或源码',
+    tracePrev: '上一步', traceNext: '下一步', traceProgress: '逻辑进度',
+    share: '分享当前视图', shareLabel: '分享视图', shareCopied: '已复制', sharePrompt: '复制此链接',
+    sectionTimeline: '02b / 时间线', timelineTitle: '全局长条时间线',
+    timelineHint: '每一行是一个 tile，横轴是逻辑 tick。同一列同时亮起的 tile 同时推进；点击色块跳到对应阶段。',
+    timelineNote: '色块只表示逻辑阶段占位，不是设备时间、吞吐或性能测量。',
+    sourceUsage: '引用位置', sourceUsageEmpty: '没有映射字段引用这一行',
     catalogError: '无法加载算子列表', pageTitle: 'OP/SHOW — 算子 Tile 执行图解',
     traceHeading: '01 / 数据如何流动', traceTitle: '从 Producer Tile 到 Consumer 输出', sourceRank: '来源 Rank', targetRank: '目标 Rank', tensor: '输出张量', producerMatrix: 'Producer 数据矩阵', claimTable: 'PID 认领表', peerPath: 'peer_mem 数据路径', consumerMatrix: 'Consumer 输出矩阵', producerHint: '行是 block，列是目标 Rank 与 head group；颜色区分 G0–G4。', claimHint: '每行一个 Producer PID；每列是本 Wave 中按步长 16 认领的任务。', consumerHint: '行是来源 Rank 与 block，列是 head group；Q/K/V 使用相同坐标。', logicalEvents: '逻辑事件与依赖', traceTiming: '每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。',
-    gemmTitle: '当前 Tensor Core 矩阵分片', gemmHint: '点击上方 C tile，再按时间轴查看 A/B 的 K 分片如何累加到 C。斜纹元素在 shared memory 中填零或在输出时跳过。', gemmMaskLegend: 'A/B 的斜纹格：越界后填零；C 的斜纹格：不写入输出。', gemmPhase: 'K 分片 {current}/{total}', gemmValid: '{count}/{total} 个有效元素'
+    gemmTitle: '当前 Tensor Core 矩阵分片', gemmHint: '点击上方 C tile，再按时间轴查看 A/B 的 K 分片如何累加到 C。斜纹元素在 shared memory 中填零或在输出时跳过。', gemmMaskLegend: 'A/B 的斜纹格：越界后填零；C 的斜纹格：不写入输出。', gemmPhase: 'K 分片 {current}/{total}', gemmValid: '{count}/{total} 个有效元素',
+    rowkReduceTitle: '按行归约的数据分片', rowkGemvTitle: '矩阵向量乘的数据分片', rowkHint: '选择输出 tile，再沿时间轴查看当前 K 分片、有效输入和输出行。每个 warp 负责一行；格子是逻辑数据位置。', rowkMaskLegend: '斜纹输入格被边界条件跳过；斜纹输出行不会写回。',
+    attentionTitle: '当前 Attention 数据分片', attentionHint: '选择输出 tile，再沿时间轴查看 Q 行块如何依次读取 K/V 分片、更新在线 softmax 状态并写出 O。', attentionMaskLegend: '斜纹 Q/O 行属于尾块；K/V 的斜纹行超出 N，S 的对应列被设为 −∞。补齐的 Q 行不会写回 O。', attentionPhase: 'Key 分片 {current}/{total}', attentionScores: 'S 是逻辑 QKᵀ 分数矩阵，不是全局内存张量。', attentionRecurrence: '在线 softmax：m′ = max(m, rowmax(S))；α = exp(m − m′)；l′ = αl + rowsum(exp(S − m′))；acc′ = αacc + P × V；O = acc / l。'
   },
   en: {
     topCaption: 'HARDWARE-FREE KERNEL WALKTHROUGH', local: 'LOCAL',
-    eyebrow: 'SOURCE → TILE MAP → EXECUTION', heroLead: 'See the work', heroAccent: 'take shape.',
+    eyebrow: 'SOURCE → TILE MAP → EXECUTION',
+    workspaceTitle: 'Tile execution walkthrough',
     intro: 'Follow each tile from its program or block ID to the data it owns. Step through the work that happens in parallel and the steps that must happen in order.',
     logical: 'Logical execution', logicalNote: 'All independent tiles advance together. The timeline shows dependencies, not device timing.',
     settings: 'Visualization settings', operator: 'OPERATOR', inputShape: 'INPUT SHAPE', statistics: 'Model statistics',
@@ -56,7 +65,7 @@ const translations = {
     metricShape: 'INPUT SHAPE', metricTileSize: 'TILE SIZE', metricOutputTiles: 'OUTPUT TILES',
     metricMasked: 'MASKED CELLS', elements: 'elements', workItems: 'logical work items',
     tailPadding: 'tail tile padding', fullyAligned: 'fully aligned', tiles: 'tiles',
-    workers: 'workers', validCells: 'valid cells', gridParallel: '{count} tiles can start in parallel',
+    workers: 'workers', validCells: 'valid cells', axisRows: 'rows', axisCols: 'columns', gridParallel: '{count} tiles can start in parallel',
     gridHint: 'Click a tile to inspect ownership and offsets ↗', waiting: 'Waiting for dependencies',
     stageComplete: 'Complete', seekTo: 'Seek to {label}', stepNumber: 'STEP {number}',
     tooManyCells: 'Tile too large for individual cells. Bounds and counts are shown above.',
@@ -70,9 +79,17 @@ const translations = {
     noAddress: 'No address sample provided.', sourceEvidence: 'Evidence, not execution',
     sourceExplanation: 'These lines are literal matches to the local source. The agent proposes the formulas; the validator checks the model and coverage. Review the formulas against the source before relying on them.',
     mappingUnknown: 'Mapping unknown: {note}. Playback is disabled.', loadError: 'Could not load model or source',
+    tracePrev: 'Previous step', traceNext: 'Next step', traceProgress: 'Logical progress',
+    share: 'Share this view', shareLabel: 'Share view', shareCopied: 'Copied', sharePrompt: 'Copy this link',
+    sectionTimeline: '02b / TIMELINE', timelineTitle: 'Global stage timeline',
+    timelineHint: 'One lane per tile; the horizontal axis is logical ticks. Tiles lit up in the same column advance together; click a segment to jump to that stage.',
+    timelineNote: 'Segments are logical stage slots, not device time, throughput, or a performance measurement.',
+    sourceUsage: 'USED BY', sourceUsageEmpty: 'No mapping fields cite this line',
     catalogError: 'Could not load catalog', pageTitle: 'OP/SHOW — Tile execution explorer',
     traceHeading: '01 / DATA FLOW', traceTitle: 'Producer tiles to Consumer output', sourceRank: 'SOURCE RANK', targetRank: 'TARGET RANK', tensor: 'OUTPUT TENSOR', producerMatrix: 'Producer data matrix', claimTable: 'PID claim table', peerPath: 'peer_mem data path', consumerMatrix: 'Consumer output matrix', producerHint: 'Rows are blocks; columns are target ranks and head groups. G0–G4 colors identify data groups.', claimHint: 'Each row is one Producer PID; columns show stride-16 claims in this wave.', consumerHint: 'Rows are source ranks and blocks; columns are head groups. Q/K/V share coordinates.', logicalEvents: 'Logical events and dependencies', traceTiming: 'Each step completes all events with satisfied dependencies. A wave is not a global PID barrier or device time.',
-    gemmTitle: 'Current Tensor Core matrix slices', gemmHint: 'Select a C tile above, then use the timeline to see successive A/B K slices accumulate into C. Striped cells are zero-filled in shared memory or skipped on output.', gemmMaskLegend: 'Striped A/B cells are zero-filled; striped C cells are not stored.', gemmPhase: 'K slice {current}/{total}', gemmValid: '{count}/{total} valid elements'
+    gemmTitle: 'Current Tensor Core matrix slices', gemmHint: 'Select a C tile above, then use the timeline to see successive A/B K slices accumulate into C. Striped cells are zero-filled in shared memory or skipped on output.', gemmMaskLegend: 'Striped A/B cells are zero-filled; striped C cells are not stored.', gemmPhase: 'K slice {current}/{total}', gemmValid: '{count}/{total} valid elements',
+    rowkReduceTitle: 'Row reduction data slices', rowkGemvTitle: 'Matrix-vector data slices', rowkHint: 'Select an output tile, then follow the timeline through each K slice, valid input, and output row. Each warp owns one row; cells show logical data positions.', rowkMaskLegend: 'Striped input cells are skipped by bounds checks; striped output rows are not stored.',
+    attentionTitle: 'Current Attention data slices', attentionHint: 'Select an output tile, then follow each K/V slice as the Q rows update online softmax state and write O.', attentionMaskLegend: 'Striped Q/O rows are tail rows; striped K/V rows exceed N and their S columns become −∞. Padded Q rows are not stored to O.', attentionPhase: 'Key slice {current}/{total}', attentionScores: 'S is the logical QKᵀ score matrix, not a global-memory tensor.', attentionRecurrence: 'Online softmax: m′ = max(m, rowmax(S)); α = exp(m − m′); l′ = αl + rowsum(exp(S − m′)); acc′ = αacc + P × V; O = acc / l.'
   }
 };
 
@@ -99,8 +116,199 @@ function applyLanguage() {
   });
 }
 
-const state = { catalog: [], model: null, source: '', scenario: null, selected: null,
-  tick: 0, timer: null, speed: 650, highlightedRef: null, language: savedLanguage() };
+const state = { catalog: [], model: null, modelIndex: null, source: '', scenario: null, selected: null,
+  tick: 0, timer: null, speed: 650, highlightedRef: null, language: savedLanguage(),
+  timelineKey: null, timelineSegments: [], refIndex: null, shareTimer: null };
+
+function isTraceModel() {
+  return state.model?.schema_version === 2 && state.model.status !== 'unknown';
+}
+
+// Map every source line to the mapping fields that cite it, so the source panel
+// can explain why a line matters and let readers jump from code to the model.
+function buildRefIndex(model) {
+  const index = { usages: {}, lines: {} };
+  const add = (ref, label) => {
+    if (!ref || !model.refs || !model.refs[ref]) return;
+    const usages = index.usages[ref] || (index.usages[ref] = []);
+    if (!usages.includes(label)) usages.push(label);
+    const line = model.refs[ref].line;
+    const refs = index.lines[line] || (index.lines[line] = []);
+    if (!refs.includes(ref)) refs.push(ref);
+  };
+  if (model.schema_version === 2) {
+    const scenario = model.scenarios[0];
+    for (const [key, ref] of Object.entries(scenario?.formula_refs || {})) add(ref, `formula ${key}`);
+    for (const [key, ref] of Object.entries(model.param_refs || {})) add(ref, `param ${key}`);
+    const kinds = new Set();
+    for (const event of scenario?.events || []) {
+      const label = `event ${event.kind}`;
+      if (kinds.has(label)) continue;
+      kinds.add(label);
+      add(event.source_ref, label);
+    }
+  } else {
+    add(model.grid_source_ref, 'launch grid');
+    const scenario = model.scenarios[0];
+    for (const dimension of scenario?.dimensions || []) {
+      add(dimension.source_ref, `axis ${dimension.name}`);
+      add(dimension.size_ref, `size ${dimension.name}`);
+    }
+    for (const step of scenario?.steps || []) {
+      add(step.source_ref, `step ${step.id}`);
+      add(step.loop_source_ref, `loop ${step.loop_axis || ''}`.trim());
+    }
+    for (const address of scenario?.tiles?.[0]?.addresses || []) {
+      add(address.source_ref, `address ${displayLabel(address)}`);
+    }
+    const gemm = scenario?.gemm_view;
+    if (gemm) {
+      for (const [key, ref] of Object.entries(gemm.source_refs || {})) add(ref, `gemm ${key}`);
+    }
+    const rowk = scenario?.row_k_view;
+    if (rowk) {
+      for (const [key, ref] of Object.entries(rowk.source_refs || {})) add(ref, `row/K ${key}`);
+    }
+    const attention = scenario?.attention_view;
+    if (attention) {
+      for (const [key, ref] of Object.entries(attention.source_refs || {})) add(ref, `attention ${key}`);
+    }
+  }
+  for (const key of Object.keys(model.refs || {})) {
+    if (!index.usages[key]) add(key, `ref ${key}`);
+  }
+  return index;
+}
+
+const STAGE_COLOR_COUNT = 6;
+
+function renderTimeline() {
+  const panel = $('timeline-panel');
+  const scenario = currentScenario();
+  if (!scenario || state.model.schema_version === 2) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const total = Math.max(1, scenario.total_ticks);
+  const key = [scenario.id, total, scenario.tiles.length, scenario.steps.length, state.language].join('|');
+  const host = $('timeline');
+  if (state.timelineKey !== key) {
+    state.timelineKey = key;
+    const rulerStep = Math.max(1, Math.ceil(total / 10));
+    const ruler = [];
+    for (let tick = 0; tick <= total; tick += rulerStep) {
+      ruler.push(`<span style="left:${tick / total * 100}%">${tick}</span>`);
+    }
+    const stageIds = [...new Set(scenario.steps.map((step) => step.id))];
+    const stageColor = new Map(stageIds.map((id, index) => [id, index % STAGE_COLOR_COUNT]));
+    const rows = [`<div class="timeline-row timeline-ruler"><span class="timeline-name"></span><div class="timeline-track">${ruler.join('')}</div></div>`];
+    for (const tile of scenario.tiles) {
+      const tileId = tileKey(tile);
+      const segments = scenario.steps.map((step, index) => {
+        const start = tile.start + index;
+        const label = `${tileLabel(tile)} · ${displayLabel(step)} · tick ${start}–${start + 1}`;
+        return `<button type="button" class="timeline-seg stage-c${stageColor.get(step.id)}${step.iteration === null ? '' : ' loop'}" data-timeline-tile="${escapeHtml(tileId)}" data-timeline-start="${start}" style="left:${start / total * 100}%;width:${100 / total}%" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"></button>`;
+      });
+      const wait = tile.start > 0 ? `<span class="timeline-wait" style="width:${tile.start / total * 100}%"></span>` : '';
+      rows.push(`<div class="timeline-row timeline-lane" data-timeline-lane="${escapeHtml(tileId)}"><button type="button" class="timeline-name" data-timeline-tile="${escapeHtml(tileId)}" data-timeline-start="${tile.start}">${escapeHtml(tileLabel(tile))}</button><div class="timeline-track">${wait}${segments.join('')}</div></div>`);
+    }
+    host.innerHTML = rows.join('');
+    state.timelineSegments = host.querySelectorAll ? [...host.querySelectorAll('[data-timeline-start]')] : [];
+  }
+  $('timeline-tick').textContent = `${state.tick} / ${scenario.total_ticks}`;
+  for (const node of state.timelineSegments) {
+    const start = Number(node.dataset.timelineStart);
+    node.dataset.state = state.tick > start ? 'done' : state.tick === start ? 'current' : 'pending';
+  }
+  const lanes = host.querySelectorAll ? host.querySelectorAll('[data-timeline-lane]') : [];
+  for (const lane of lanes) lane.classList.toggle('selected', lane.dataset.timelineLane === state.selected);
+}
+
+function parseHash() {
+  const raw = String(window.location?.hash || '').replace(/^#/, '');
+  if (!raw) return null;
+  const params = new URLSearchParams(raw);
+  return {
+    model: params.get('m'), scenario: params.get('s'), tile: params.get('tile'),
+    task: params.get('task'), tick: params.get('tick'), language: params.get('lang'),
+  };
+}
+
+function buildShareHash() {
+  const params = new URLSearchParams();
+  if (state.modelIndex !== null) params.set('m', String(state.modelIndex));
+  if (state.scenario) params.set('s', state.scenario);
+  if (state.language) params.set('lang', state.language);
+  if (isTraceModel()) {
+    const trace = TraceView.getState();
+    if (trace.selected) params.set('task', trace.selected);
+    params.set('tick', String(trace.tick));
+  } else if (state.model) {
+    if (state.selected) params.set('tile', state.selected);
+    params.set('tick', String(state.tick));
+  }
+  return '#' + params.toString();
+}
+
+function shareUrl() {
+  const origin = window.location?.origin || '';
+  const path = window.location?.pathname || '';
+  return `${origin}${path}${buildShareHash()}`;
+}
+
+function flashShare(button, label) {
+  const labelNode = button.querySelector ? button.querySelector('span') : null;
+  if (!labelNode) return;
+  labelNode.textContent = label;
+  button.classList.add('copied');
+  clearTimeout(state.shareTimer);
+  state.shareTimer = setTimeout(() => {
+    labelNode.textContent = t('shareLabel');
+    button.classList.remove('copied');
+  }, 1600);
+}
+
+function copyShareLink() {
+  const url = shareUrl();
+  try { window.history?.replaceState(null, '', buildShareHash()); } catch (error) { /* ignore */ }
+  const done = () => flashShare($('share-button'), t('shareCopied'));
+  const fallback = () => {
+    try { window.prompt?.(t('sharePrompt'), url); } catch (error) { /* ignore */ }
+    done();
+  };
+  if (window.navigator?.clipboard?.writeText) {
+    window.navigator.clipboard.writeText(url).then(done, fallback);
+  } else {
+    fallback();
+  }
+}
+
+function applyHashState(hash) {
+  if (!hash) return;
+  if ((hash.language === 'zh' || hash.language === 'en') && hash.language !== state.language) {
+    setLanguage(hash.language);
+  }
+  const scenario = state.model?.scenarios.find((item) => item.id === hash.scenario);
+  if (scenario && scenario.id !== state.scenario) {
+    state.scenario = scenario.id;
+    state.selected = isTraceModel() ? null : tileKey(scenario.tiles[0]);
+    state.tick = 0;
+    if (isTraceModel()) TraceView.scenarioChange(scenario);
+    render();
+  }
+  const tick = Number.parseInt(hash.tick, 10);
+  if (isTraceModel()) {
+    state.highlightedRef = null;
+    TraceView.setState({
+      selected: hash.task || undefined,
+      tick: Number.isFinite(tick) ? tick : undefined,
+    });
+    renderSource();
+    return;
+  }
+  const current = currentScenario();
+  if (hash.tile && current?.tiles.some((tile) => tileKey(tile) === hash.tile)) state.selected = hash.tile;
+  if (Number.isFinite(tick) && current) state.tick = Math.max(0, Math.min(current.total_ticks, tick));
+  render();
+}
 
 function currentScenario() {
   return state.model?.scenarios.find((item) => item.id === state.scenario);
@@ -120,7 +328,7 @@ function selectedTile() {
 
 function tileState(tile) {
   if (state.tick >= tile.end) return 'done';
-  if (state.tick < tile.start) return 'pending';
+  if (state.tick <= tile.start) return 'pending';
   return 'active';
 }
 
@@ -130,11 +338,34 @@ function stepIndex(tile) {
   return Math.max(0, Math.min(scenario.steps.length - 1, state.tick - tile.start));
 }
 
-function activeStep() {
-  const tile = selectedTile();
+function activeStep(tile = selectedTile()) {
   const scenario = currentScenario();
   return tile && scenario && state.tick >= tile.start && state.tick < tile.end
     ? scenario.steps[stepIndex(tile)] : null;
+}
+
+// Last step that belongs to a repeated loop group; -1 when the program has no loop.
+function lastLoopStepIndex(steps) {
+  for (let index = steps.length - 1; index >= 0; index--) {
+    if (steps[index].iteration !== null && steps[index].iteration !== undefined) return index;
+  }
+  return -1;
+}
+
+// The K-slice phase shown by the inspector and the GEMM view: the active step's
+// iteration, the last iteration once the loop is over (epilogue / finished tile),
+// and 0 before the loop starts. Works for loop-free programs (phase 0).
+function phaseIndex(scenario, tile) {
+  const steps = scenario?.steps || [];
+  const lastLoop = lastLoopStepIndex(steps);
+  const lastIteration = lastLoop >= 0 ? steps[lastLoop].iteration : 0;
+  if (!tile || steps.length === 0) return 0;
+  if (state.tick >= tile.end) return lastIteration;
+  if (state.tick < tile.start) return 0;
+  const index = Math.max(0, Math.min(steps.length - 1, state.tick - tile.start));
+  const iteration = steps[index]?.iteration;
+  if (iteration !== null && iteration !== undefined) return iteration;
+  return index > lastLoop ? lastIteration : 0;
 }
 
 function syncPlayButton() {
@@ -190,19 +421,23 @@ function setLanguage(language) {
   if (!translations[language]) return;
   state.language = language;
   try { localStorage.setItem('op-show-language', language); } catch { /* Storage may be unavailable. */ }
+  state.refIndex = state.model ? buildRefIndex(state.model) : null;
+  state.timelineKey = null;
   applyLanguage();
   renderCatalog();
   syncPlayButton();
-  if (state.model?.schema_version === 2) TraceView.render();
   render();
 }
 
 function renderMetrics() {
   const scenario = currentScenario();
+  const sliceView = scenario.gemm_view || scenario.row_k_view;
   const shape = scenario.dimensions.map((dim) => `${dim.name}=${dim.extent}`)
-    .concat(scenario.gemm_view ? [`K=${scenario.gemm_view.k_extent}`] : []).join(' · ');
+    .concat(sliceView ? [`K=${sliceView.k_extent}`] : [])
+    .concat(scenario.attention_view ? [`N=${scenario.attention_view.n_extent}`] : []).join(' · ');
   const sizes = scenario.dimensions.map((dim) => dim.size)
-    .concat(scenario.gemm_view ? [scenario.gemm_view.k_size] : []).join(' × ');
+    .concat(sliceView ? [sliceView.k_size] : [])
+    .concat(scenario.attention_view ? [scenario.attention_view.n_size] : []).join(' × ');
   const pad = scenario.tiles.reduce((sum, tile) => sum + tile.total_cells - tile.valid_cells, 0);
   const metrics = [
     [t('metricShape'), escapeHtml(shape), ''],
@@ -217,17 +452,30 @@ function renderGrid() {
   const scenario = currentScenario();
   const dimensions = scenario.dimensions;
   const columns = dimensions.length === 2 ? dimensions[1].count : dimensions[0].count;
-  $('tile-grid').style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
+  const columnAxis = dimensions.length === 2 ? dimensions[1] : dimensions[0];
+  const template = `repeat(${columns}, minmax(0, 1fr))`;
+  $('tile-grid').style.gridTemplateColumns = template;
+  $('tile-column-axis').style.gridTemplateColumns = template;
+  $('tile-column-axis').innerHTML = Array.from({ length: columns }, (_, index) =>
+    `<span>${escapeHtml(columnAxis.name)}${index}</span>`).join('');
+  const orientation = dimensions.length === 2
+    ? `<span>${escapeHtml(dimensions[0].name)} ↓ ${t('axisRows')}</span><span>${escapeHtml(columnAxis.name)} → ${t('axisCols')}</span>`
+    : `<span>${escapeHtml(dimensions[0].name)} → ${t('axisCols')}</span>`;
   $('grid-context').innerHTML = `<span class="grid-dimensions">${dimensions.map((dim) =>
     `<span class="grid-dimension">${escapeHtml(dim.name)}: ${dim.extent} / ${dim.size} = ${dim.count} ${t('tiles')}</span>`
-  ).join('<span aria-hidden="true">·</span>')}</span><span>${scenario.grid.x} × ${scenario.grid.y} ${t('workers')}</span>`;
-  $('tile-grid').innerHTML = scenario.tiles.map((tile) => {
+  ).join('<span aria-hidden="true">·</span>')}</span><span class="grid-orientation">${orientation}</span><span>${scenario.grid.x} × ${scenario.grid.y} ${t('workers')}</span>`;
+  // docs/model-format: the first 2D tile axis is the grid row and the second is the
+  // column, independent of the worker iteration order the backend stores tiles in.
+  const tiles = scenario.tiles.slice().sort((a, b) =>
+    (a.coords[0] - b.coords[0]) || ((a.coords[1] ?? 0) - (b.coords[1] ?? 0)));
+  $('tile-grid').innerHTML = tiles.map((tile) => {
     const status = tileState(tile);
     const tail = tile.valid_cells < tile.total_cells;
+    const isSelected = tileKey(tile) === state.selected;
     const progress = Math.max(0, Math.min(1, (state.tick - tile.start) / tile.step_count));
     const range = tile.bounds.map((bound) => `${bound.axis}[${bound.start}:${bound.end}]`).join(' · ');
     const statusLabel = t(status === 'done' ? 'complete' : status);
-    return `<button type="button" class="tile-card ${status} ${tail ? 'tail' : ''} ${tileKey(tile) === state.selected ? 'selected' : ''}" data-tile="${tileKey(tile)}" aria-label="${escapeHtml(tileLabel(tile))}, ${escapeHtml(range)}, ${statusLabel}">
+    return `<button type="button" tabindex="${isSelected ? '0' : '-1'}" class="tile-card ${status} ${tail ? 'tail' : ''} ${isSelected ? 'selected' : ''}" data-tile="${tileKey(tile)}" aria-label="${escapeHtml(tileLabel(tile))}, ${escapeHtml(range)}, ${statusLabel}">
       <span class="tile-card-top"><span class="tile-id">${escapeHtml(tileLabel(tile))}</span><span class="tile-card-status">${statusLabel}</span></span>
       <span class="tile-card-sub">${escapeHtml(range)}</span><span class="tile-card-sub">${tile.valid_cells}/${tile.total_cells} ${t('validCells')}</span>
       <span class="tile-card-progress" style="width:${Math.round(progress * 100)}%"></span></button>`;
@@ -241,12 +489,11 @@ function renderGemmView() {
   const view = scenario.gemm_view;
   $('gemm-view').hidden = !view;
   if (!view) return;
+  $('gemm-legend').innerHTML = `<span><i class="matrix-swatch"></i>${t('validCell')}</span><span><i class="matrix-swatch masked"></i>${t('maskedCell')}</span>`;
   const tile = selectedTile();
   const [m, n] = tile.bounds;
-  const loopSteps = scenario.steps.filter((step) => step.iteration !== null);
-  const current = activeStep();
-  const phase = current?.iteration ?? (state.tick > tile.start + loopSteps.length - 1 ?
-    loopSteps[loopSteps.length - 1].iteration : 0);
+  const current = activeStep(tile);
+  const phase = phaseIndex(scenario, tile);
   const kStart = phase * view.k_size;
   const kEnd = Math.min(kStart + view.k_size, view.k_extent);
   const roles = view.step_roles[current?.id] || [];
@@ -261,10 +508,15 @@ function renderGemmView() {
       cells += `<span class="gemm-cell ${valid ? '' : 'masked'}" title="${escapeHtml(coord)} · ${t(valid ? 'validCell' : 'maskedCell')}"></span>`;
     }
     const count = (rowEnd - rowStart) * (colEnd - colStart);
-    return `<div class="gemm-matrix-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}">
+    const rowLabel = `${rowAxis}[${rowStart}:${rowEnd})`;
+    const colLabel = `${colAxis}[${colStart}:${colEnd})`;
+    return `<div class="gemm-matrix-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}" data-matrix="${name}">
       <div class="gemm-matrix-top"><strong>${name}</strong><button type="button" data-source-ref="${escapeHtml(ref)}">L${state.model.refs[ref].line} ↗</button></div>
-      <div class="gemm-matrix-range">${rowAxis}[${rowStart}:${rowEnd}) × ${colAxis}[${colStart}:${colEnd})</div>
-      <div class="gemm-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}">${cells}</div>
+      <div class="matrix-frame gemm-matrix-frame">
+        <span class="matrix-axis col">${escapeHtml(colLabel)}</span>
+        <span class="matrix-axis row">${escapeHtml(rowLabel)}</span>
+        <div class="gemm-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}">${cells}</div>
+      </div>
       <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}</div></div>`;
   }
   $('gemm-matrices').innerHTML = [
@@ -277,6 +529,101 @@ function renderGemmView() {
     matrix('C', m.start, n.start, m.tile_end - m.start, n.tile_end - n.start, m.end, n.end,
       view.m_axis, view.n_axis, view.source_refs.c)
   ].join('');
+}
+
+function renderRowKView() {
+  const scenario = currentScenario();
+  const view = scenario.row_k_view;
+  $('rowk-view').hidden = !view;
+  if (!view) return;
+  const tile = selectedTile();
+  const row = tile.bounds[0];
+  const phase = phaseIndex(scenario, tile);
+  const kStart = phase * view.k_size;
+  const kEnd = Math.min(kStart + view.k_size, view.k_extent);
+  const role = view.step_roles[activeStep(tile)?.id] || [];
+  const gemv = view.kind === 'gemv';
+  $('rowk-title').textContent = t(gemv ? 'rowkGemvTitle' : 'rowkReduceTitle');
+  $('rowk-equation').textContent = gemv ? 'A × x → y' : 'X → Y';
+  $('rowk-hint').textContent = t('rowkHint');
+  $('rowk-phase').textContent = t('gemmPhase', {
+    current: phase + 1, total: Math.ceil(view.k_extent / view.k_size)
+  });
+
+  function card(name, matrixRole, rowStart, colStart, rows, cols, rowEnd, colEnd, rowAxis, colAxis, ref) {
+    let cells = '';
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const valid = rowStart + r < rowEnd && colStart + c < colEnd;
+      const coord = rowAxis && colAxis ? `${rowAxis}${rowStart + r}, ${colAxis}${colStart + c}`
+        : rowAxis ? `${rowAxis}${rowStart + r}` : `${colAxis}${colStart + c}`;
+      cells += `<span class="gemm-cell ${valid ? '' : 'masked'}" title="${escapeHtml(coord)} · ${t(valid ? 'validCell' : 'maskedCell')}"></span>`;
+    }
+    const count = (rowEnd - rowStart) * (colEnd - colStart);
+    const rowLabel = rowAxis ? `${rowAxis}[${rowStart}:${rowEnd})` : '';
+    const colLabel = colAxis ? `${colAxis}[${colStart}:${colEnd})` : '';
+    return `<div class="gemm-matrix-card rowk-card ${matrixRole} ${role.includes(matrixRole) ? 'focused' : ''}">
+      <div class="gemm-matrix-top"><strong>${name}</strong><button type="button" data-source-ref="${escapeHtml(ref)}">L${state.model.refs[ref].line} ↗</button></div>
+      <div class="matrix-frame gemm-matrix-frame"><span class="matrix-axis col">${escapeHtml(colLabel)}</span><span class="matrix-axis row">${escapeHtml(rowLabel)}</span>
+      <div class="gemm-cell-grid rowk-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}">${cells}</div></div>
+      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}</div></div>`;
+  }
+  const matrix = card(gemv ? 'A' : 'X', 'matrix', row.start, kStart,
+    row.tile_end - row.start, view.k_size, row.end, kEnd,
+    view.output_axis, 'K', view.source_refs.matrix);
+  const vector = gemv ? card('x', 'vector', 0, kStart, 1, view.k_size, 1, kEnd,
+    '', 'K', view.source_refs.vector) : '';
+  const output = card(gemv ? 'y' : 'Y', 'output', row.start, 0,
+    row.tile_end - row.start, 1, row.end, 1,
+    view.output_axis, '', view.source_refs.output);
+  $('rowk-matrices').className = `rowk-matrices ${view.kind}`;
+  $('rowk-matrices').innerHTML = gemv
+    ? `${matrix}<div class="gemm-operator" aria-hidden="true">×</div>${vector}<div class="gemm-operator" aria-hidden="true">→</div>${output}`
+    : `${matrix}<div class="gemm-operator" aria-hidden="true">→</div>${output}`;
+}
+
+function renderAttentionView() {
+  const scenario = currentScenario();
+  const view = scenario.attention_view;
+  $('attention-view').hidden = !view;
+  if (!view) return;
+  const tile = selectedTile();
+  const [m, d] = tile.bounds;
+  const phase = phaseIndex(scenario, tile);
+  const nStart = phase * view.n_size;
+  const nEnd = Math.min(nStart + view.n_size, view.n_extent);
+  const roles = view.step_roles[activeStep(tile)?.id] || [];
+  $('attention-phase').textContent = t('attentionPhase', {
+    current: phase + 1, total: Math.ceil(view.n_extent / view.n_size)
+  });
+
+  function card(name, rowStart, colStart, rows, cols, rowEnd, colEnd, rowAxis, colAxis, ref) {
+    let cells = '';
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const valid = rowStart + r < rowEnd && colStart + c < colEnd;
+      const coordinate = `${rowAxis}${rowStart + r}, ${colAxis}${colStart + c}`;
+      cells += `<span class="gemm-cell ${valid ? '' : 'masked'}" title="${escapeHtml(coordinate)} · ${t(valid ? 'validCell' : 'maskedCell')}"></span>`;
+    }
+    const count = (rowEnd - rowStart) * (colEnd - colStart);
+    return `<div class="gemm-matrix-card attention-card ${name.toLowerCase()} ${roles.includes(name) ? 'focused' : ''}">
+      <div class="gemm-matrix-top"><strong>${name}</strong><button type="button" data-source-ref="${escapeHtml(ref)}">L${state.model.refs[ref].line} ↗</button></div>
+      <div class="matrix-frame gemm-matrix-frame"><span class="matrix-axis col">${escapeHtml(colAxis)}[${colStart}:${colEnd})</span><span class="matrix-axis row">${escapeHtml(rowAxis)}[${rowStart}:${rowEnd})</span>
+      <div class="gemm-cell-grid attention-cell-grid" style="grid-template-columns:repeat(${cols},1fr)" role="img" aria-label="${name}: ${t('gemmValid', {count, total: rows * cols})}">${cells}</div></div>
+      <div class="gemm-matrix-valid">${t('gemmValid', {count, total: rows * cols})}</div></div>`;
+  }
+  $('attention-matrices').innerHTML = [
+    card('Q', m.start, d.start, m.tile_end - m.start, d.tile_end - d.start,
+      m.end, d.end, view.q_axis, view.d_axis, view.source_refs.q),
+    card('K', nStart, d.start, view.n_size, d.tile_end - d.start,
+      nEnd, d.end, 'N', view.d_axis, view.source_refs.k),
+    card('V', nStart, d.start, view.n_size, d.tile_end - d.start,
+      nEnd, d.end, 'N', view.d_axis, view.source_refs.v),
+    card('S', m.start, nStart, m.tile_end - m.start, view.n_size,
+      m.end, nEnd, view.q_axis, 'N', view.source_refs.score),
+    card('O', m.start, d.start, m.tile_end - m.start, d.tile_end - d.start,
+      m.end, d.end, view.q_axis, view.d_axis, view.source_refs.o)
+  ].join('');
+  $('attention-recurrence').innerHTML = `<p>${t('attentionScores')}</p><p>${t('attentionRecurrence')}</p>
+    <button type="button" data-source-ref="${escapeHtml(view.source_refs.softmax)}">L${state.model.refs[view.source_refs.softmax].line} ↗</button>`;
 }
 
 function renderPlayback() {
@@ -294,10 +641,19 @@ function renderPlayback() {
     const stageTick = tile.start + index;
     const stageStatus = state.tick > stageTick ? 'complete' : state.tick === stageTick ? 'current' : '';
     const repeatLabel = step.iteration === null ? t('stepNumber', {number: index + 1}) :
-      `K${step.iteration} · ${t('stepNumber', {number: index + 1})}`;
+      `${step.loop_axis}${step.iteration} · ${t('stepNumber', {number: index + 1})}`;
     const label = displayLabel(step);
     return `<button type="button" class="stage-chip ${stageStatus}" data-step="${index}" title="${escapeHtml(t('seekTo', {label}))}"><b>${escapeHtml(label)}</b><span>${escapeHtml(repeatLabel)}</span></button>`;
   }).join('');
+  // Keep the active stage chip visible inside its own horizontal scroller.
+  const strip = $('stage-strip');
+  const current = strip.querySelector('.stage-chip.current');
+  if (current) {
+    const left = current.offsetLeft;
+    const right = left + current.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = Math.max(0, left - 8);
+    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth + 8;
+  }
 }
 
 function renderCells(tile, scenario) {
@@ -315,7 +671,14 @@ function renderCells(tile, scenario) {
       cells += `<span class="cell ${valid ? '' : 'masked'}" title="${valid ? t('validCell') : t('maskedCell')} [${coordinate}]"></span>`;
     }
   }
-  return `<div class="cell-grid" style="grid-template-columns:repeat(${bounds.length === 1 ? rows : cols},1fr)">${cells}</div>`;
+  const rowAxis = bounds[0];
+  const colAxis = bounds.length > 1 ? bounds[1] : null;
+  const label = `${tile.valid_cells} / ${tile.total_cells} ${t('validCells')}`;
+  return `<div class="matrix-frame inspector-matrix">
+    ${colAxis ? `<span class="matrix-axis col">${escapeHtml(colAxis.axis)}[${colAxis.start}:${colAxis.end})</span>` : ''}
+    <span class="matrix-axis row">${escapeHtml(rowAxis.axis)}[${rowAxis.start}:${rowAxis.end})</span>
+    <div class="cell-grid" style="grid-template-columns:repeat(${bounds.length === 1 ? rows : cols},1fr)" role="img" aria-label="${escapeHtml(label)}">${cells}</div>
+  </div>`;
 }
 
 function renderInspector() {
@@ -327,7 +690,9 @@ function renderInspector() {
     .map(([key, value]) => `${state.model.worker_labels[key] || `wid_${key}`}=${value}`).join(' · ');
   const tail = tile.total_cells > tile.valid_cells;
   $('inspector-title').textContent = tileLabel(tile);
-  const phase = step?.iteration ?? (state.tick >= scenario.total_ticks ? Math.max(...scenario.steps.map((item) => item.iteration ?? 0)) : 0);
+  const loopSlice = step && step.loop_axis && step.loop_valid != null && step.iteration != null
+    ? `<div class="cell-summary" style="margin-top:8px">${escapeHtml(t('loopSlice', {axis: step.loop_axis, number: step.iteration + 1, valid: step.loop_valid, total: scenario.params[step.loop_tile]}))}</div>` : '';
+  const phase = phaseIndex(scenario, tile);
   const addresses = tile.addresses.map((address) => {
     const sample = address.samples[Math.min(phase, address.samples.length - 1)];
     const substitutions = Object.entries(sample.variables).map(([key, value]) => `${key}=${value}`).join(', ');
@@ -342,7 +707,7 @@ function renderInspector() {
       <span class="key">${t('dependencies')}</span><span class="value">${tile.dependencies.length ? escapeHtml(tile.dependencies.map((dep) => `T[${dep.join(', ')}]`).join(', ')) : t('noDependencies')}</span>
       <span class="key">${t('current')}</span><span class="value">${state.tick >= tile.end ? t('stageComplete') : state.tick < tile.start ? t('waiting') : escapeHtml(displayLabel(step))}</span>
     </div></div>
-    <div class="inspector-section"><div class="inspector-label">${t('validAndMask')}</div>${renderCells(tile, scenario)}<div class="cell-summary">${t('cellsLegend')} ${tail ? `<strong>${t('maskedTail', {count: tile.total_cells - tile.valid_cells})}</strong>` : t('noPadding')}</div>${step?.loop_axis ? `<div class="cell-summary" style="margin-top:8px">${escapeHtml(t('loopSlice', {axis: step.loop_axis, number: step.iteration + 1, valid: step.loop_valid, total: scenario.params[step.loop_tile]}))}</div>` : ''}</div>
+    <div class="inspector-section"><div class="inspector-label">${t('validAndMask')}</div>${renderCells(tile, scenario)}<div class="cell-summary">${t('cellsLegend')} ${tail ? `<strong>${t('maskedTail', {count: tile.total_cells - tile.valid_cells})}</strong>` : t('noPadding')}</div>${loopSlice}</div>
     <div class="inspector-section inspector-bottom"><div class="inspector-label">${t('addressOffsets')}</div>${addresses || `<div class="cell-summary">${t('noAddress')}</div>`}</div>`;
 }
 
@@ -353,15 +718,35 @@ function renderSource() {
     (step?.source_ref || state.model.grid_source_ref || Object.keys(state.model.refs)[0]);
   const highlighted = state.highlightedRef || refKey;
   const line = state.model.refs[highlighted]?.line;
+  const refIndex = state.refIndex || { usages: {}, lines: {} };
+  const usages = refIndex.usages[highlighted] || [];
+  const lineRefs = refIndex.lines[line] || [];
   $('source-path').textContent = state.model.source_path;
-  $('source-explainer').innerHTML = `<div><strong>${t('sourceEvidence')}</strong>${t('sourceExplanation')}</div><div class="source-ref-list">${Object.entries(state.model.refs).slice(0, 7).map(([key, value]) => `<button data-source-ref="${escapeHtml(key)}">${escapeHtml(key)} · L${value.line}</button>`).join('')}</div>`;
-  $('source-code').innerHTML = state.source.split('\n').map((text, index) => `<span class="code-line ${index + 1 === line ? 'highlight' : ''}" id="line-${index + 1}"><span class="line-no">${String(index + 1).padStart(2, '0')}</span>${escapeHtml(text || ' ')}</span>`).join('');
+  $('source-explainer').innerHTML = `<div><strong>${t('sourceEvidence')}</strong>${t('sourceExplanation')}</div><div class="source-ref-list">${Object.entries(state.model.refs).slice(0, 7).map(([key, value]) => `<button data-source-ref="${escapeHtml(key)}">${escapeHtml(key)} · L${value.line}</button>`).join('')}</div><div class="source-usage"><div class="usage-title">${t('sourceUsage')}</div><div class="usage-chips">${usages.length ? usages.map((usage) => `<span>${escapeHtml(usage)}</span>`).join('') : `<span class="usage-empty">${t('sourceUsageEmpty')}</span>`}</div>${lineRefs.length > 1 ? `<div class="usage-chips" style="margin-top:6px">${lineRefs.map((key) => `<button data-source-ref="${escapeHtml(key)}">${escapeHtml(key)}</button>`).join('')}</div>` : ''}</div>`;
+  $('source-code').innerHTML = state.source.split('\n').map((text, index) => {
+    const cited = (refIndex.lines[index + 1] || []).length > 0;
+    const interactive = cited ? ` tabindex="0" role="button" aria-label="${escapeHtml(t('sourceUsage'))}"` : '';
+    return `<span class="code-line${index + 1 === line ? ' highlight' : ''}${cited ? ' cited' : ''}" id="line-${index + 1}" data-line="${index + 1}"${interactive}><span class="line-no">${String(index + 1).padStart(2, '0')}</span>${escapeHtml(text || ' ')}</span>`;
+  }).join('');
   const target = $(`line-${line}`);
   if (target && $('source-code').dataset.lastLine !== String(line)) {
     const viewport = $('source-code').parentElement;
     viewport.scrollTop += target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - viewport.clientHeight / 2;
     $('source-code').dataset.lastLine = String(line);
   }
+}
+
+function showErrorPanel(message) {
+  pause();
+  TraceView.pause();
+  $('scenario-switch').innerHTML = '';
+  $('unknown-panel').hidden = false;
+  $('unknown-panel').className = 'unknown';
+  $('unknown-panel').textContent = message;
+  $('visualization').hidden = true;
+  $('trace-visualization').hidden = true;
+  $('metrics').hidden = true;
+  $('metrics').innerHTML = '';
 }
 
 function render() {
@@ -371,9 +756,12 @@ function render() {
   const trace = state.model.schema_version === 2;
   $('visualization').hidden = unknown || trace;
   $('trace-visualization').hidden = unknown || !trace;
-  $('metrics').hidden = unknown;
+  $('metrics').hidden = unknown || trace;
+  if (unknown || trace) $('metrics').innerHTML = '';
   $('unknown-panel').hidden = !unknown;
+  $('timeline-panel').hidden = unknown || trace;
   if (unknown) {
+    $('scenario-switch').innerHTML = '';
     $('unknown-panel').className = 'unknown';
     $('unknown-panel').textContent = t('mappingUnknown', {note: displayLabel(state.model, 'note')});
     renderSource();
@@ -384,34 +772,54 @@ function render() {
   renderMetrics();
   renderGrid();
   renderGemmView();
+  renderRowKView();
+  renderAttentionView();
   renderPlayback();
+  renderTimeline();
   renderInspector();
   renderSource();
 }
 
+let loadToken = 0;
+
 async function loadModel(index) {
+  const token = ++loadToken;
   pause();
   TraceView.pause();
-  const [modelResponse, sourceResponse] = await Promise.all([
-    fetch(`/models/${index}.json`), fetch(`/sources/${index}.txt`)
-  ]);
-  if (!modelResponse.ok || !sourceResponse.ok) throw new Error(t('loadError'));
-  state.model = await modelResponse.json();
-  state.source = await sourceResponse.text();
-  state.scenario = state.model.scenarios[0]?.id || null;
-  state.selected = state.model.schema_version === 2 ? null :
-    (state.model.scenarios[0]?.tiles[0] ? tileKey(state.model.scenarios[0].tiles[0]) : null);
-  state.tick = 0;
-  state.highlightedRef = null;
-  $('model-select').value = String(index);
-  if (state.model.schema_version === 2 && state.model.status !== 'unknown') {
-    TraceView.init(state.model, currentScenario(), (ref, scroll) => {
-      state.highlightedRef = ref;
-      renderSource();
-      if (scroll) $('source-panel').scrollIntoView({behavior:'smooth', block:'start'});
-    }, () => state.language);
+  try {
+    const [modelResponse, sourceResponse] = await Promise.all([
+      fetch(`/models/${index}.json`), fetch(`/sources/${index}.txt`)
+    ]);
+    if (token !== loadToken) return;
+    if (!modelResponse.ok || !sourceResponse.ok) throw new Error(t('loadError'));
+    const model = await modelResponse.json();
+    const source = await sourceResponse.text();
+    if (token !== loadToken) return;
+    state.model = model;
+    state.source = source;
+    state.refIndex = buildRefIndex(state.model);
+    state.timelineKey = null;
+    state.scenario = state.model.scenarios[0]?.id || null;
+    state.selected = state.model.schema_version === 2 ? null :
+      (state.model.scenarios[0]?.tiles[0] ? tileKey(state.model.scenarios[0].tiles[0]) : null);
+    state.tick = 0;
+    state.highlightedRef = null;
+    delete $('source-code').dataset.lastLine;
+    $('model-select').value = String(index);
+    if (state.model.schema_version === 2 && state.model.status !== 'unknown') {
+      TraceView.init(state.model, currentScenario(), (ref, scroll) => {
+        state.highlightedRef = ref;
+        renderSource();
+        if (scroll) $('source-panel').scrollIntoView({behavior:'smooth', block:'start'});
+      }, () => state.language);
+    }
+    render();
+    state.modelIndex = Number(index);
+  } catch (error) {
+    if (token !== loadToken) return;
+    showErrorPanel(t('loadError'));
+    if (state.modelIndex !== null) $('model-select').value = String(state.modelIndex);
   }
-  render();
 }
 
 async function initialize() {
@@ -419,14 +827,18 @@ async function initialize() {
     const response = await fetch('/catalog.json');
     if (!response.ok) throw new Error(t('catalogError'));
     state.catalog = await response.json();
+    const hash = parseHash();
+    if (hash?.language && translations[hash.language]) {
+      state.language = hash.language;
+      applyLanguage();
+    }
     renderCatalog();
-    await loadModel(0);
+    const requested = Number.parseInt(hash?.model ?? '', 10);
+    const index = Number.isInteger(requested) && requested >= 0 && requested < state.catalog.length ? requested : 0;
+    await loadModel(index);
+    applyHashState(hash);
   } catch (error) {
-    $('unknown-panel').hidden = false;
-    $('unknown-panel').className = 'unknown';
-    $('unknown-panel').textContent = error.message;
-    $('visualization').hidden = true;
-    $('metrics').hidden = true;
+    showErrorPanel(t('catalogError'));
   }
 }
 
@@ -452,8 +864,55 @@ $('tile-grid').addEventListener('click', (event) => {
   state.selected = button.dataset.tile;
   state.highlightedRef = null;
   render();
+  // render() replaces the grid; keep keyboard focus on the tile the user picked.
+  $('tile-grid').querySelector(`[data-tile="${state.selected}"]`)?.focus({preventScroll: true});
+});
+// One tab stop for the whole tile matrix; arrow keys move selection (WAI-ARIA grid pattern).
+$('tile-grid').addEventListener('keydown', (event) => {
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+  if (!event.target.closest?.('[data-tile]')) return;
+  const scenario = currentScenario();
+  const tile = selectedTile();
+  if (!scenario || !tile) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const dimensions = scenario.dimensions;
+  const coords = [...tile.coords];
+  if (dimensions.length === 1) {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') coords[0] -= 1;
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') coords[0] += 1;
+    else coords[0] = event.key === 'Home' ? 0 : dimensions[0].count - 1;
+  } else {
+    if (event.key === 'ArrowLeft') coords[1] -= 1;
+    if (event.key === 'ArrowRight') coords[1] += 1;
+    if (event.key === 'ArrowUp') coords[0] -= 1;
+    if (event.key === 'ArrowDown') coords[0] += 1;
+    if (event.key === 'Home') coords[1] = 0;
+    if (event.key === 'End') coords[1] = dimensions[1].count - 1;
+  }
+  const next = scenario.tiles.find((item) => item.coords.every((value, index) => value === coords[index]));
+  if (!next || tileKey(next) === state.selected) return;
+  state.selected = tileKey(next);
+  state.highlightedRef = null;
+  render();
+  const buttons = $('tile-grid').querySelectorAll ? [...$('tile-grid').querySelectorAll('[data-tile]')] : [];
+  buttons.find((node) => node.dataset.tile === state.selected)?.focus();
 });
 $('gemm-matrices').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-source-ref]');
+  if (!button) return;
+  state.highlightedRef = button.dataset.sourceRef;
+  renderSource();
+  $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+});
+$('rowk-matrices').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-source-ref]');
+  if (!button) return;
+  state.highlightedRef = button.dataset.sourceRef;
+  renderSource();
+  $('source-panel').scrollIntoView({behavior: 'smooth', block: 'start'});
+});
+$('attention-view').addEventListener('click', (event) => {
   const button = event.target.closest('[data-source-ref]');
   if (!button) return;
   state.highlightedRef = button.dataset.sourceRef;
@@ -488,10 +947,46 @@ $('speed-select').addEventListener('change', (event) => {
   if (state.timer) { pause(); play(); }
 });
 window.addEventListener('keydown', (event) => {
-  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
-  if (event.code === 'Space') { event.preventDefault(); play(); }
-  if (event.code === 'ArrowRight') { event.preventDefault(); pause(); seek(state.tick + 1); }
-  if (event.code === 'ArrowLeft') { event.preventDefault(); pause(); seek(state.tick - 1); }
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const active = document.activeElement;
+  if (active && (active.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(active.tagName))) return;
+  if (!state.model) return;
+  const trace = state.model.schema_version === 2 && state.model.status !== 'unknown';
+  if (event.code === 'Space') {
+    event.preventDefault();
+    if (trace) TraceView.toggle(); else play();
+  }
+  if (event.code === 'ArrowRight') {
+    event.preventDefault();
+    if (trace) TraceView.step(1); else { pause(); seek(state.tick + 1); }
+  }
+  if (event.code === 'ArrowLeft') {
+    event.preventDefault();
+    if (trace) TraceView.step(-1); else { pause(); seek(state.tick - 1); }
+  }
+});
+$('share-button').addEventListener('click', copyShareLink);
+$('timeline').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-timeline-tile]');
+  if (!button) return;
+  pause();
+  state.selected = button.dataset.timelineTile;
+  seek(Number(button.dataset.timelineStart) || 0);
+});
+function pickSourceLine(node) {
+  if (!node) return;
+  const refs = state.refIndex?.lines?.[Number(node.dataset.line)];
+  if (!refs || !refs.length) return;
+  state.highlightedRef = refs[0];
+  renderSource();
+}
+$('source-code').addEventListener('click', (event) => pickSourceLine(event.target.closest('.code-line')));
+$('source-code').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  const node = event.target.closest?.('.code-line');
+  if (!node || !node.classList?.contains('cited')) return;
+  event.preventDefault();
+  pickSourceLine(node);
 });
 applyLanguage();
 initialize();

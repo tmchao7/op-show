@@ -97,8 +97,13 @@ def main(argv=None):
             print(f"Valid source-backed model ({model['backend']}): {summary}")
         return 0
 
-    server = ThreadingHTTPServer((args.host, args.port), _handler(entries))
-    url = f"http://{args.host}:{server.server_port}/"
+    try:
+        server = ThreadingHTTPServer((args.host, args.port), _handler(entries))
+    except (OSError, OverflowError) as exc:
+        print(f"Cannot listen on {args.host}:{args.port}: {exc}", file=sys.stderr)
+        return 2
+    host = "127.0.0.1" if args.host in ("", "0.0.0.0") else args.host
+    url = f"http://{host}:{server.server_port}/"
     print(f"Open {url}", flush=True)
     if not args.no_browser:
         webbrowser.open(url)

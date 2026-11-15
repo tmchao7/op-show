@@ -19,6 +19,9 @@ class ValidationError(ValueError):
 BACKENDS = {"cuda", "triton-cuda", "triton-ascend"}
 MAX_TILES = 256
 MAX_STEPS = 96
+MAX_SAMPLE_VARIABLES = 16
+MAX_ADDRESS_EVALUATIONS = 20_000
+MAX_CELLS = 1_000_000
 
 
 def _require(condition, message):
@@ -78,11 +81,19 @@ def _steps(program, params, refs):
                  f"program[{index}].steps must be a nonempty list")
         repeat = _number(item.get("repeat", "1"), params, f"program[{index}].repeat")
         _require(1 <= repeat <= MAX_STEPS, f"program[{index}].repeat must be 1..{MAX_STEPS}")
+        _require(len(item["steps"]) <= MAX_STEPS,
+                 f"program[{index}] declares more than {MAX_STEPS} steps")
         loop_axis, loop_tile = item.get("loop_axis"), item.get("loop_tile")
-        if repeat > 1:
+        declared_loop = loop_axis is not None or loop_tile is not None
+        if repeat > 1 or declared_loop:
             _require(isinstance(loop_axis, str) and loop_axis in params, f"program[{index}]: loop_axis is required")
             _require(isinstance(loop_tile, str) and loop_tile in params, f"program[{index}]: loop_tile is required")
             _evidence(item.get("loop_source_ref"), refs, f"program[{index}].loop")
+            expected = -(-params[loop_axis] // params[loop_tile])
+            _require(repeat == expected,
+                     f"program[{index}].repeat must equal ceildiv({loop_axis}, {loop_tile}) = {expected}")
+        if repeat == 1:
+            loop_axis, loop_tile = None, None
         for iteration in range(repeat):
             loop_valid = None
             if repeat > 1:
@@ -95,11 +106,12 @@ def _steps(program, params, refs):
                          f"program[{index}]: step label is required")
                 label_zh = _localized(step, "label_zh", f"program[{index}].{step['id']}")
                 ref = _evidence(step.get("source_ref"), refs, f"program[{index}].{step['id']}")
+                _require(len(result) < MAX_STEPS, f"expanded program exceeds {MAX_STEPS} steps")
                 result.append({"id": step["id"], "label": step["label"], "label_zh": label_zh,
                                "source_ref": ref,
+                               "loop_source_ref": item.get("loop_source_ref") if repeat > 1 else None,
                                "iteration": iteration if repeat > 1 else None,
                                "loop_axis": loop_axis, "loop_tile": loop_tile, "loop_valid": loop_valid})
-    _require(len(result) <= MAX_STEPS, f"expanded program exceeds {MAX_STEPS} steps")
     return result
 
 
@@ -112,6 +124,8 @@ def _address_samples(addresses, env, refs, phase_count):
         _require(isinstance(label, str) and label, f"address[{i}].label is required")
         label_zh = _localized(address, "label_zh", f"address[{i}]")
         _require(isinstance(samples, dict), f"address[{i}].sample must be an object")
+        _require(len(samples) <= MAX_SAMPLE_VARIABLES,
+                 f"address[{i}].sample supports at most {MAX_SAMPLE_VARIABLES} variables")
         ref = _evidence(address.get("source_ref"), refs, f"address[{i}]")
         values = []
         for phase in range(phase_count):
@@ -168,17 +182,27 @@ def _dependencies(declarations, tile_lookup, axis_count):
 
 
 def validate_model(path):
-    model_path = Path(path).resolve()
     try:
-        document = json.loads(model_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValidationError(f"cannot read model: {exc}") from exc
+        return _validate_model(path)
+    except ValidationError:
+        raise
+    except (OSError, UnicodeError, ValueError, RuntimeError, RecursionError) as exc:
+        raise ValidationError(f"cannot read model or source: {exc}") from exc
+
+
+def _validate_model(path):
+    model_path = Path(path).resolve()
+    document = json.loads(model_path.read_text(encoding="utf-8"))
     _require(isinstance(document, dict), "model root must be an object")
-    if document.get("schema_version") == 2:
+    schema_version = document.get("schema_version")
+    _require(type(schema_version) is int,
+             "schema_version must be the integer 1 or 2")
+    if schema_version == 2:
         from .trace import validate_trace_model
         return validate_trace_model(document, model_path)
-    _require(document.get("schema_version") == 1, "schema_version must be 1")
-    _require(document.get("backend") in BACKENDS, f"backend must be one of {', '.join(sorted(BACKENDS))}")
+    _require(schema_version == 1, "schema_version must be 1")
+    _require(isinstance(document.get("backend"), str) and document["backend"] in BACKENDS,
+             f"backend must be one of {', '.join(sorted(BACKENDS))}")
     _require(isinstance(document.get("title"), str) and document["title"], "title is required")
     title_zh = _localized(document, "title_zh", "model")
     source_text, refs = _source_and_refs(document, model_path)
@@ -190,7 +214,8 @@ def validate_model(path):
             "backend": document["backend"],
             "kernel": document["source"]["kernel"], "source_path": document["source"]["path"],
             "refs": refs, "status": status, "note": mapping.get("note", ""),
-            "note_zh": _localized(mapping, "note_zh", "mapping"), "scenarios": []}
+            "note_zh": _localized(mapping, "note_zh", "mapping"),
+            "worker_labels": mapping.get("worker_labels", {}), "scenarios": []}
     if status == "unknown":
         _require(isinstance(mapping.get("note"), str) and mapping["note"].strip(),
                  "unknown mapping requires an explanation")
@@ -198,14 +223,15 @@ def validate_model(path):
 
     axes = mapping.get("tile_axes")
     _require(isinstance(axes, list) and 1 <= len(axes) <= 2, "mapping.tile_axes must have 1 or 2 axes")
-    names = [a.get("name") for a in axes if isinstance(a, dict)]
-    _require(len(names) == len(axes) and len(set(names)) == len(names) and
-             all(isinstance(n, str) and n.isidentifier() for n in names), "tile axis names must be unique identifiers")
+    _require(all(isinstance(axis, dict) for axis in axes), "tile_axes entries must be objects")
+    names = [axis.get("name") for axis in axes]
+    _require(all(isinstance(name, str) and name.isidentifier() for name in names),
+             "tile axis names must be identifiers")
+    _require(len(set(names)) == len(names), "tile axis names must be unique")
     grid = mapping.get("worker_grid")
     _require(isinstance(grid, dict) and "x" in grid, "mapping.worker_grid.x is required")
     grid_ref = _evidence(mapping.get("grid_source_ref"), refs, "worker grid")
     base["grid_source_ref"] = grid_ref
-    base["worker_labels"] = mapping.get("worker_labels", {})
     gemm_view = mapping.get("gemm_view")
     if gemm_view is not None:
         _require(isinstance(gemm_view, dict), "mapping.gemm_view must be an object")
@@ -224,10 +250,52 @@ def validate_model(path):
             _require(isinstance(step_id, str) and isinstance(roles, list) and roles and
                      all(isinstance(role, str) and role in ("A", "B", "C") for role in roles),
                      f"gemm_view.step_roles.{step_id} must contain A, B, or C")
+    row_k_view = mapping.get("row_k_view")
+    if row_k_view is not None:
+        _require(isinstance(row_k_view, dict), "mapping.row_k_view must be an object")
+        kind = row_k_view.get("kind")
+        _require(len(axes) == 1 and row_k_view.get("output_axis") == names[0],
+                 "row_k_view output axis must match the single output tile axis")
+        _require(kind in ("reduce", "gemv"), "row_k_view.kind must be reduce or gemv")
+        source_refs = row_k_view.get("source_refs")
+        expected_refs = {"matrix", "output", "reduce"} | ({"vector"} if kind == "gemv" else set())
+        _require(isinstance(source_refs, dict) and set(source_refs) == expected_refs,
+                 "row_k_view.source_refs must cite its inputs, reduction, and output")
+        for key, ref in source_refs.items():
+            _evidence(ref, refs, f"row_k_view.source_refs.{key}")
+        step_roles = row_k_view.get("step_roles")
+        allowed_roles = {"matrix", "output"} | ({"vector"} if kind == "gemv" else set())
+        _require(isinstance(step_roles, dict) and step_roles,
+                 "row_k_view.step_roles must map step IDs to matrices")
+        for step_id, roles in step_roles.items():
+            _require(isinstance(step_id, str) and isinstance(roles, list) and roles and
+                     all(isinstance(role, str) and role in allowed_roles for role in roles),
+                     f"row_k_view.step_roles.{step_id} contains an invalid role")
+    attention_view = mapping.get("attention_view")
+    if attention_view is not None:
+        _require(isinstance(attention_view, dict), "mapping.attention_view must be an object")
+        _require(len(axes) == 2 and [attention_view.get("q_axis"), attention_view.get("d_axis")] == names,
+                 "attention_view axes must match the two output tile axes")
+        source_refs = attention_view.get("source_refs")
+        _require(isinstance(source_refs, dict) and set(source_refs) == {"q", "k", "v", "score", "softmax", "o"},
+                 "attention_view.source_refs must cite Q, K, V, score, softmax, and O")
+        for key, ref in source_refs.items():
+            _evidence(ref, refs, f"attention_view.source_refs.{key}")
+        step_roles = attention_view.get("step_roles")
+        _require(isinstance(step_roles, dict) and step_roles,
+                 "attention_view.step_roles must map step IDs to matrices")
+        for step_id, roles in step_roles.items():
+            _require(isinstance(step_id, str) and isinstance(roles, list) and roles and
+                     all(isinstance(role, str) and role in ("Q", "K", "V", "S", "O") for role in roles),
+                     f"attention_view.step_roles.{step_id} contains an invalid role")
     scenarios = document.get("scenarios")
     _require(isinstance(scenarios, list) and len(scenarios) == 2,
              "exactly two scenarios (aligned and padded) are required")
-    _require({s.get("id") for s in scenarios if isinstance(s, dict)} == {"aligned", "padded"},
+    _require(all(isinstance(scenario, dict) for scenario in scenarios),
+             "scenarios must be objects")
+    _require(all(isinstance(scenario.get("id"), str) for scenario in scenarios),
+             "scenario ids must be strings")
+    _require({scenario["id"] for scenario in scenarios} == {"aligned", "padded"},
              "scenario ids must be aligned and padded")
 
     for scenario in scenarios:
@@ -239,15 +307,17 @@ def validate_model(path):
                      for k, v in params.items()), f"{scenario_id}: params must be positive integers")
         dimensions = []
         for i, axis in enumerate(axes):
-            _require(isinstance(axis, dict), f"tile_axes[{i}] must be an object")
             name = axis["name"]
             extent = _number(axis.get("extent"), params, f"tile_axes[{i}].extent")
             size = _number(axis.get("size"), params, f"tile_axes[{i}].size")
             _require(extent > 0 and size > 0, f"{scenario_id}.{name}: extent and size must be positive")
             _evidence(axis.get("source_ref"), refs, f"tile_axes[{i}]")
+            size_ref = axis.get("size_ref")
+            if size_ref is not None:
+                _evidence(size_ref, refs, f"tile_axes[{i}].size_ref")
             dimensions.append({"name": name, "extent": extent, "size": size,
                                "count": (extent + size - 1) // size, "index": axis.get("index"),
-                               "source_ref": axis["source_ref"]})
+                               "source_ref": axis["source_ref"], "size_ref": size_ref})
         has_tail = any(d["extent"] % d["size"] for d in dimensions)
         _require(has_tail == (scenario_id == "padded"),
                  f"{scenario_id}: aligned must divide evenly and padded must contain a tail tile")
@@ -264,6 +334,10 @@ def validate_model(path):
                  f"{scenario_id}: demo supports at most {MAX_TILES} tiles")
         steps = _steps(mapping.get("program"), params, refs)
         phase_count = max((step["iteration"] for step in steps if step["iteration"] is not None), default=0) + 1
+        addresses = mapping.get("addresses", [])
+        if isinstance(addresses, list):
+            _require(len(addresses) * phase_count * expected_count <= MAX_ADDRESS_EVALUATIONS,
+                     f"{scenario_id}: address sample budget exceeds {MAX_ADDRESS_EVALUATIONS}")
         view_scenario = None
         if gemm_view is not None:
             k_extent = _number(gemm_view.get("k_extent"), params, "gemm_view.k_extent")
@@ -276,6 +350,35 @@ def validate_model(path):
             view_scenario = {"m_axis": m_axis, "n_axis": n_axis, "k_extent": k_extent,
                              "k_size": k_size, "source_refs": gemm_view["source_refs"],
                              "step_roles": gemm_view["step_roles"]}
+        row_k_scenario = None
+        if row_k_view is not None:
+            k_extent = _number(row_k_view.get("k_extent"), params, "row_k_view.k_extent")
+            k_size = _number(row_k_view.get("k_size"), params, "row_k_view.k_size")
+            _require(k_extent > 0 and k_size > 0, "row_k_view K extent and tile must be positive")
+            _require(phase_count == (k_extent + k_size - 1) // k_size,
+                     "row_k_view K slices do not match program loop")
+            _require(set(row_k_view["step_roles"]) <= {step["id"] for step in steps},
+                     "row_k_view.step_roles cites an unknown step")
+            row_k_scenario = {"kind": kind, "output_axis": names[0], "k_extent": k_extent,
+                              "k_size": k_size, "source_refs": row_k_view["source_refs"],
+                              "step_roles": row_k_view["step_roles"]}
+        attention_scenario = None
+        if attention_view is not None:
+            n_extent = _number(attention_view.get("n_extent"), params, "attention_view.n_extent")
+            n_size = _number(attention_view.get("n_size"), params, "attention_view.n_size")
+            _require(n_extent > 0 and 0 < n_size <= 256,
+                     "attention_view N extent must be positive and tile must be 1..256")
+            _require(phase_count == (n_extent + n_size - 1) // n_size,
+                     "attention_view N slices do not match program loop")
+            _require(set(attention_view["step_roles"]) <= {step["id"] for step in steps},
+                     "attention_view.step_roles cites an unknown step")
+            _require(dimensions[0]["size"] * n_size <= 4096 and
+                     n_size * dimensions[1]["size"] <= 4096,
+                     "attention_view matrix exceeds 4096 cells")
+            attention_scenario = {"q_axis": names[0], "d_axis": names[1],
+                                  "n_extent": n_extent, "n_size": n_size,
+                                  "source_refs": attention_view["source_refs"],
+                                  "step_roles": attention_view["step_roles"]}
         tiles = []
         lookup = {}
         for z, y, x in itertools.product(range(grid_sizes["z"]), range(grid_sizes["y"]), range(grid_sizes["x"])):
@@ -298,9 +401,11 @@ def validate_model(path):
             for dimension, bound in zip(dimensions, bounds):
                 valid_cells *= bound["end"] - bound["start"]
                 total_cells *= dimension["size"]
+            _require(total_cells <= MAX_CELLS,
+                     f"{scenario_id}: tile cell budget exceeds {MAX_CELLS}")
             tile = {"coords": coords, "worker": {"x": x, "y": y, "z": z}, "bounds": bounds,
                     "valid_cells": valid_cells, "total_cells": total_cells,
-                    "addresses": _address_samples(mapping.get("addresses", []), env, refs, phase_count),
+                    "addresses": _address_samples(addresses, env, refs, phase_count),
                     "dependencies": [], "step_count": len(steps)}
             tiles.append(tile)
             lookup[key] = tile
@@ -312,5 +417,8 @@ def validate_model(path):
                                    "label_zh": label_zh,
                                    "params": params, "dimensions": dimensions, "grid": grid_sizes,
                                    "steps": steps, "tiles": tiles, "gemm_view": view_scenario,
+                                   "row_k_view": row_k_scenario,
+                                   "attention_view": attention_scenario,
                                    "total_ticks": max(tile["end"] for tile in tiles)})
+    base["scenarios"].sort(key=lambda item: 0 if item["id"] == "aligned" else 1)
     return base, source_text

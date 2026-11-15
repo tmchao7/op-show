@@ -14,10 +14,10 @@ const TraceView = (() => {
   let sourceJump = () => {};
   let lang = () => 'zh';
   const $t = (id) => document.getElementById(id);
-  const h = (value) => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const h = (value) => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const words = {
-    zh: {pending:'待执行',active:'进行中',done:'完成',direct:'本地直写',peer_store:'远端写入',load:'加载 Q/K/V',fence:'fence',notify:'notify',wait:'wait',consume:'consume',output_store:'输出 Q/K/V',masked:'masked',skip:'跳过',valid:'有效',source:'来源',target:'目标',group:'分组',block:'Block',producer:'Producer',consumer:'Consumer',slot:'信号槽',offset:'元素偏移',head:'Head 范围',tokens:'有效 token',jump:'定位源码',play:'播放',pause:'暂停',example:'示例参数',notMeasured:'非设备测量值',none:'无',route:'路径',peer:'目标 peer_mem',output:'目标 qkv_out',input:'输入 q/k/v',wave:'Wave',task:'任务',pid:'物理 PID',claim:'认领序号',current:'当前事件',all:'全部'},
-    en: {pending:'Pending',active:'In progress',done:'Complete',direct:'Local direct write',peer_store:'Remote store',load:'Load Q/K/V',fence:'fence',notify:'notify',wait:'wait',consume:'consume',output_store:'Write Q/K/V',masked:'masked',skip:'Skipped',valid:'valid',source:'Source',target:'Target',group:'Group',block:'Block',producer:'Producer',consumer:'Consumer',slot:'Signal slot',offset:'Element offset',head:'Head range',tokens:'Valid tokens',jump:'View source',play:'Play',pause:'Pause',example:'Example inputs',notMeasured:'not device measurements',none:'None',route:'Route',peer:'Target peer_mem',output:'Target qkv_out',input:'Input q/k/v',wave:'Wave',task:'Task',pid:'Physical PID',claim:'Claim index',current:'Current event',all:'All'}
+    zh: {pending:'待执行',active:'进行中',done:'完成',direct:'本地直写',peer_store:'远端写入',load:'加载 Q/K/V',fence:'fence',notify:'notify',wait:'wait',consume:'consume',output_store:'输出 Q/K/V',masked:'masked',skip:'跳过',valid:'有效',source:'来源',target:'目标',group:'分组',block:'Block',producer:'Producer',consumer:'Consumer',slot:'信号槽',offset:'元素偏移',head:'Head 范围',tokens:'有效 token',jump:'定位源码',play:'播放',pause:'暂停',example:'示例参数',notMeasured:'非设备测量值',none:'无',route:'路径',peer:'目标 peer_mem',output:'目标 qkv_out',input:'输入 q/k/v',wave:'Wave',task:'任务',pid:'物理 PID',claim:'认领序号',current:'当前事件',all:'全部',inputStrides:'输入 strides',outputStrides:'输出 strides'},
+    en: {pending:'Pending',active:'In progress',done:'Complete',direct:'Local direct write',peer_store:'Remote store',load:'Load Q/K/V',fence:'fence',notify:'notify',wait:'wait',consume:'consume',output_store:'Write Q/K/V',masked:'masked',skip:'Skipped',valid:'valid',source:'Source',target:'Target',group:'Group',block:'Block',producer:'Producer',consumer:'Consumer',slot:'Signal slot',offset:'Element offset',head:'Head range',tokens:'Valid tokens',jump:'View source',play:'Play',pause:'Pause',example:'Example inputs',notMeasured:'not device measurements',none:'None',route:'Route',peer:'Target peer_mem',output:'Target qkv_out',input:'Input q/k/v',wave:'Wave',task:'Task',pid:'Physical PID',claim:'Claim index',current:'Current event',all:'All',inputStrides:'Input strides',outputStrides:'Output strides'}
   };
   const w = key => words[lang()][key] || key;
   const task = () => taskMap.get(selected) || scenario?.tasks[0];
@@ -34,15 +34,25 @@ const TraceView = (() => {
   function cell(item, content, extra='') {
     return `<button type="button" class="${tileClass(item)}" data-task="${h(item.id)}" aria-label="${h(label(item))}, ${w(status(item))}" title="${h(label(item))}">${content}${extra}</button>`;
   }
-  function pause() { if (timer) clearInterval(timer); timer = null; const btn=$t('trace-play'); btn.innerHTML=`▶ <span>${w('play')}</span>`; btn.setAttribute('aria-label',w('play')); }
+  function syncPlayButton() {
+    const btn=$t('trace-play'); if(!btn) return;
+    const playing=Boolean(timer);
+    const label=w(playing?'pause':'play');
+    btn.innerHTML=`${playing?'Ⅱ':'▶'} <span>${label}</span>`;
+    btn.setAttribute('aria-label',label);
+  }
+  function pause() { if (timer) clearInterval(timer); timer = null; syncPlayButton(); }
   function seek(value) { const previous=currentRef(); tick=Math.max(0,Math.min(scenario.total_ticks,Number(value)||0)); if(tick===scenario.total_ticks) pause(); render(); if(currentRef()!==previous) sourceJump(currentRef(),false); }
   function play() {
     if(timer) { pause(); return; }
+    if(!scenario) return;
     if(tick===scenario.total_ticks) tick=0;
-    const btn=$t('trace-play'); btn.innerHTML=`Ⅱ <span>${w('pause')}</span>`; btn.setAttribute('aria-label',w('pause'));
     timer=setInterval(()=>seek(tick+1),420);
+    syncPlayButton();
     render();
   }
+  function toggle() { if(timer) pause(); else play(); }
+  function step(delta) { if(!scenario) return; pause(); seek(tick+delta); }
   function select(id) {
     const item=taskMap.get(id); if(!item) return;
     selected=id; sourceRank=item.source_rank; targetRank=item.target_rank;
@@ -114,7 +124,7 @@ const TraceView = (() => {
     $t('trace-percent').textContent=`${Math.round(s.events.filter(e=>e.level<tick).length/s.events.length*100)}%`;
     $t('trace-tick').textContent=`${tick} / ${s.total_ticks}`;
     $t('trace-scrubber').max=s.total_ticks; $t('trace-scrubber').value=tick;
-    $t('trace-waves').innerHTML=s.waves.map(wave=>`<button type="button" data-wave="${wave.index}" class="${current.wave===wave.index?'selected':''}">Wave ${wave.index+1}<small>B${wave.block_start}–B${wave.block_end-1}</small></button>`).join('');
+    $t('trace-waves').innerHTML=s.waves.map(wave=>`<button type="button" data-wave="${wave.index}" class="${current.wave===wave.index?'selected':''}">${w('wave')} ${wave.index+1}<small>B${wave.block_start}–B${wave.block_end-1}</small></button>`).join('');
     const ids=[...current.event_ids]; if(current.fence_id) ids.push(current.fence_id);
     const events=ids.map(ev).filter(Boolean).sort((a,b)=>a.level-b.level);
     $t('trace-event-strip').innerHTML=events.map(e=>`<button type="button" data-event="${h(e.id)}" class="${e.level<tick?'done':e.level===tick?'active':''}"><b>${h(w(e.kind))}</b><small>${e.level+1} / ${s.total_ticks}</small></button>`).join('');
@@ -126,8 +136,8 @@ const TraceView = (() => {
       [w('producer'),`P${String(x.producer_logical).padStart(2,'0')} · pid ${x.producer_pid} · flat_idx ${x.flat_idx}`],
       [w('consumer'),x.route==='local'?w('direct'):`C${String(x.consumer_logical).padStart(2,'0')} · pid ${x.consumer_pid} · flat_idx ${x.consumer_flat_idx}`],
       [w('route'),w(x.route==='local'?'direct':'peer_store')],[w('slot'),x.route==='local'?w('none'):`${x.signal_slot} × ${p.signal_stride} = ${x.signal_offset}`],
-      ['input strides',`(${p.stride_a_s}, ${p.stride_a_h}, ${p.stride_a_d})`],
-      ['output strides',`(${p.stride_out_s}, ${p.stride_out_h}, ${p.stride_out_d})`]
+      [w('inputStrides'),`(${p.stride_a_s}, ${p.stride_a_h}, ${p.stride_a_d})`],
+      [w('outputStrides'),`(${p.stride_out_s}, ${p.stride_out_h}, ${p.stride_out_d})`]
     ];
     $t('trace-detail-title').textContent=label(x);
     const sample=Array.from({length:p.block_s},(_,i)=>`<span class="${i<x.valid_tokens?'':'masked'}" title="token ${x.block_id*p.block_s+i}: ${i<x.valid_tokens?w('valid'):w('masked')}"></span>`).join('');
@@ -149,6 +159,7 @@ const TraceView = (() => {
   }
   function render() {
     if(!scenario) return;
+    syncPlayButton();
     rankPickers(); renderLegend(); renderProducer(); renderClaims(); renderPath(); renderConsumer(); renderPlayer(); renderDetail();
     document.querySelectorAll('[data-trace-tab]').forEach(node=>node.setAttribute('aria-selected',String(node.dataset.traceTab===tab)));
     document.querySelectorAll('[data-trace-view]').forEach(node=>node.classList.toggle('trace-tab-hidden',node.dataset.traceView!==tab));
@@ -178,5 +189,17 @@ const TraceView = (() => {
   $t('trace-prev').addEventListener('click',()=>{pause();seek(tick-1);});
   $t('trace-next').addEventListener('click',()=>{pause();seek(tick+1);});
   $t('trace-scrubber').addEventListener('input',e=>{pause();seek(e.target.value);});
-  return {init,scenarioChange,render,pause,currentRef};
+  function getState() { return {selected,tick}; }
+  function setState(next) {
+    if(!scenario) return;
+    const state=next||{};
+    if(state.selected && taskMap.has(state.selected)) {
+      selected=state.selected;
+      const item=taskMap.get(selected);
+      sourceRank=item.source_rank; targetRank=item.target_rank;
+    }
+    if(Number.isFinite(state.tick)) { pause(); tick=Math.max(0,Math.min(scenario.total_ticks,state.tick)); }
+    render();
+  }
+  return {init,scenarioChange,render,pause,currentRef,toggle,step,getState,setState};
 })();

@@ -11,14 +11,14 @@
     <div class="app-shell">
       <header class="topbar">
         <div class="brand"><span class="brand-mark">▦</span><span>OP<span class="brand-slash">/</span>SHOW</span></div>
-        <div class="topbar-right"><span class="topbar-caption" data-i18n="topCaption">无需硬件的算子图解</span><div class="language-switch" role="group" aria-label="语言 / Language"><button type="button" data-lang="zh" aria-pressed="true">中文</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div><span class="live-dot"></span><span data-i18n="local">本地</span></div>
+        <div class="topbar-right"><span class="topbar-caption" data-i18n="topCaption">无需硬件的算子图解</span><button class="share-button" id="share-button" type="button" data-i18n-title="share" data-i18n-aria-label="share">↗ <span data-i18n="shareLabel">分享视图</span></button><div class="language-switch" role="group" aria-label="语言 / Language"><button type="button" data-lang="zh" aria-pressed="true">中文</button><button type="button" data-lang="en" aria-pressed="false">EN</button></div><span class="live-dot"></span><span data-i18n="local">本地</span></div>
       </header>
 
       <main>
-        <section class="intro">
-          <div>
+        <section class="intro" aria-labelledby="page-title">
+          <div class="intro-copy">
             <div class="eyebrow" data-i18n="eyebrow">源码 → TILE 映射 → 执行</div>
-            <h1><span data-i18n="heroLead">看清每个 tile</span> <em data-i18n="heroAccent">如何工作。</em></h1>
+            <h1 id="page-title" data-i18n="workspaceTitle">Tile 执行图解</h1>
             <p data-i18n="intro">从 program 或 block ID 找到它负责的数据，再逐步查看哪些 tile 可以并行、哪些阶段必须依次执行。</p>
           </div>
           <div class="intro-note"><span class="note-icon">◎</span><div><strong data-i18n="logical">逻辑执行进度</strong><span data-i18n="logicalNote">无依赖的 tile 同时推进。时间轴展示依赖关系，不代表设备耗时。</span></div></div>
@@ -38,15 +38,30 @@
             <section class="panel tile-panel">
               <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionTiles">01 / TILE 归属</div><h2 data-i18n="tileGrid">输出 tile 网格</h2></div><div class="legend"><span><i class="legend-dot pending"></i><span data-i18n="pending">待执行</span></span><span><i class="legend-dot running"></i><span data-i18n="active">进行中</span></span><span><i class="legend-dot done"></i><span data-i18n="complete">已完成</span></span><span><i class="legend-dot pad"></i><span data-i18n="tailMasked">尾部 / mask</span></span></div></div>
               <div class="grid-context" id="grid-context"></div>
-              <div class="tile-grid-wrap"><div id="tile-grid" class="tile-grid" role="group" aria-label="输出 tile" data-i18n-aria-label="outputTiles"></div></div>
+              <div class="tile-grid-wrap"><div id="tile-column-axis" class="tile-column-axis" aria-hidden="true"></div><div id="tile-grid" class="tile-grid" role="group" aria-label="输出 tile" data-i18n-aria-label="outputTiles"></div></div>
               <div class="grid-footer" id="grid-footer"></div>
             </section>
 
             <section class="panel gemm-panel" id="gemm-view" hidden>
-              <div class="panel-head"><div><div class="section-kicker">A × B → C</div><h2 data-i18n="gemmTitle">当前 Tensor Core 矩阵分片</h2></div><span id="gemm-phase" class="gemm-phase"></span></div>
+              <div class="panel-head"><div><div class="section-kicker">A × B → C</div><h2 data-i18n="gemmTitle">当前 Tensor Core 矩阵分片</h2></div><div class="gemm-meta"><span id="gemm-legend" class="matrix-legend"></span><span id="gemm-phase" class="gemm-phase"></span></div></div>
               <p class="trace-description" data-i18n="gemmHint">点击上方 C tile，再按时间轴查看 A/B 的 K 分片如何累加到 C。斜纹元素在 shared memory 中填零或在输出时跳过。</p>
               <div id="gemm-matrices" class="gemm-matrices"></div>
               <p class="playback-footnote" data-i18n="gemmMaskLegend">A/B 的斜纹格：越界后填零；C 的斜纹格：不写入输出。</p>
+            </section>
+
+            <section class="panel rowk-panel" id="rowk-view" hidden>
+              <div class="panel-head"><div><div class="section-kicker" id="rowk-equation">X → Y</div><h2 id="rowk-title"></h2></div><span id="rowk-phase" class="gemm-phase"></span></div>
+              <p class="trace-description" id="rowk-hint"></p>
+              <div id="rowk-matrices" class="rowk-matrices"></div>
+              <p class="playback-footnote" data-i18n="rowkMaskLegend">斜纹输入格被边界条件跳过；斜纹输出行不会写回。</p>
+            </section>
+
+            <section class="panel attention-panel" id="attention-view" hidden>
+              <div class="panel-head"><div><div class="section-kicker">Q × Kᵀ → S → P × V → O</div><h2 data-i18n="attentionTitle">当前 Attention 数据分片</h2></div><span id="attention-phase" class="gemm-phase"></span></div>
+              <p class="trace-description" data-i18n="attentionHint">选择输出 tile，再沿时间轴查看 Q 行块如何依次读取 K/V 分片、更新在线 softmax 状态并写出 O。</p>
+              <div id="attention-matrices" class="attention-matrices"></div>
+              <div class="attention-recurrence" id="attention-recurrence"></div>
+              <p class="playback-footnote" data-i18n="attentionMaskLegend">斜纹 Q/O 行属于尾块；K/V 的斜纹行超出 N，S 的对应列被设为 −∞。补齐的 Q 行不会写回 O。</p>
             </section>
 
             <section class="panel playback-panel">
@@ -62,6 +77,13 @@
               <div class="stage-heading"><span><span data-i18n="stageSequence">阶段顺序</span> <small data-i18n="serialWithinTile">tile 内依次执行</small></span><span id="current-stage"></span></div>
               <div class="stage-strip" id="stage-strip"></div>
               <p class="playback-footnote" data-i18n="progressNote">进度按已完成的 tile 阶段计算，不代表实际耗时或 GPU/NPU 利用率。</p>
+            </section>
+
+            <section class="panel timeline-panel" id="timeline-panel" hidden>
+              <div class="panel-head"><div><div class="section-kicker" data-i18n="sectionTimeline">02b / 时间线</div><h2 data-i18n="timelineTitle">全局长条时间线</h2></div><span class="timeline-tick" id="timeline-tick">0 / 0</span></div>
+              <p class="timeline-hint" data-i18n="timelineHint">每一行是一个 tile，横轴是逻辑 tick。同一列同时亮起的 tile 同时推进；点击色块跳到对应阶段。</p>
+              <div class="timeline-scroll"><div id="timeline" class="timeline"></div></div>
+              <p class="playback-footnote" data-i18n="timelineNote">色块只表示逻辑阶段占位，不是设备时间、吞吐或性能测量。</p>
             </section>
           </div>
 
@@ -84,7 +106,7 @@
             <section class="panel trace-panel" data-trace-view="path"><div class="panel-head"><div><div class="section-kicker">04 / PEER_MEM</div><h2 data-i18n="peerPath">peer_mem 数据路径</h2></div></div><div id="trace-path"></div></section>
             <section class="panel trace-panel" data-trace-view="consumer"><div class="panel-head"><div><div class="section-kicker">05 / CONSUMER</div><h2 data-i18n="consumerMatrix">Consumer 输出矩阵</h2></div></div><p class="trace-description" data-i18n="consumerHint">行是来源 Rank 与 block，列是 head group；Q/K/V 使用相同坐标。</p><div class="trace-matrix-scroll"><div id="trace-consumer"></div></div></section>
           </div>
-          <section class="panel trace-player"><div class="panel-head"><div><div class="section-kicker">06 / WAVE</div><h2 data-i18n="logicalEvents">逻辑事件与依赖</h2></div><span class="progress-count" id="trace-percent">0%</span></div><div class="trace-wave-row" id="trace-waves"></div><div class="playback-controls"><button class="icon-button" id="trace-reset" aria-label="重置">↺</button><button class="icon-button" id="trace-prev" aria-label="上一步">←</button><button class="play-button" id="trace-play">▶ <span>播放</span></button><button class="icon-button" id="trace-next" aria-label="下一步">→</button><input id="trace-scrubber" class="scrubber" type="range" min="0" value="0" aria-label="逻辑进度"><span class="tick-label" id="trace-tick">0 / 0</span></div><div id="trace-event-strip" class="trace-event-strip"></div><p class="playback-footnote" data-i18n="traceTiming">每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。</p></section>
+          <section class="panel trace-player"><div class="panel-head"><div><div class="section-kicker">06 / WAVE</div><h2 data-i18n="logicalEvents">逻辑事件与依赖</h2></div><span class="progress-count" id="trace-percent">0%</span></div><div class="trace-wave-row" id="trace-waves"></div><div class="playback-controls"><button class="icon-button" id="trace-reset" aria-label="重置" data-i18n-aria-label="reset">↺</button><button class="icon-button" id="trace-prev" aria-label="上一步" data-i18n-aria-label="tracePrev">←</button><button class="play-button" id="trace-play">▶ <span>播放</span></button><button class="icon-button" id="trace-next" aria-label="下一步" data-i18n-aria-label="traceNext">→</button><input id="trace-scrubber" class="scrubber" type="range" min="0" value="0" aria-label="逻辑进度" data-i18n-aria-label="traceProgress"><span class="tick-label" id="trace-tick">0 / 0</span></div><div id="trace-event-strip" class="trace-event-strip"></div><p class="playback-footnote" data-i18n="traceTiming">每一步同时完成所有依赖已满足的事件；Wave 不是跨 PID 的全局屏障，也不代表设备耗时。</p></section>
           <section class="panel trace-detail"><div class="panel-head"><div><div class="section-kicker">07 / TILE</div><h2 id="trace-detail-title"></h2></div></div><div id="trace-detail-body"></div></section>
         </section>
 

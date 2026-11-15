@@ -12,8 +12,82 @@ EXAMPLES = ROOT / "examples"
 
 
 class ModelTests(unittest.TestCase):
+    def test_flash_attention2_query_and_key_tail_slices(self):
+        model, source = validate_model(EXAMPLES / "triton_flash_attention2.json")
+        self.assertIn("score = tl.dot(q, tl.trans(k))", source)
+        self.assertIn("acc = tl.dot(p.to(tl.float16), v, acc)", source)
+        aligned, padded = model["scenarios"]
+        self.assertEqual(len(aligned["tiles"]), 2)
+        self.assertTrue(all(tile["valid_cells"] == 256 for tile in aligned["tiles"]))
+        self.assertEqual([step["loop_valid"] for step in padded["steps"] if step["id"] == "load-kv"],
+                         [16, 5])
+        tail = next(tile for tile in padded["tiles"] if tile["coords"] == [1, 0])
+        self.assertEqual(tail["valid_cells"], 11 * 16)
+        self.assertEqual([address["samples"][1]["offset"] for address in tail["addresses"]],
+                         [16 * 16, 16 * 16, 16 * 16, 16 * 16])
+        self.assertEqual((padded["attention_view"]["n_extent"], padded["attention_view"]["n_size"]),
+                         (21, 16))
+
+    def test_attention_view_rejects_missing_evidence_and_wrong_key_loop(self):
+        document = json.loads((EXAMPLES / "triton_flash_attention2.json").read_text())
+        document["source"]["path"] = str(EXAMPLES / "sources/triton_flash_attention2.py")
+        for mutate, expected in (
+            (lambda doc: doc["mapping"]["attention_view"]["source_refs"].update(score="missing"),
+             "missing source evidence ref"),
+            (lambda doc: doc["mapping"]["attention_view"].update(n_size="8"),
+             "N slices do not match"),
+            (lambda doc: doc["mapping"]["attention_view"].update(q_axis="N"),
+             "axes must match"),
+        ):
+            candidate = json.loads(json.dumps(document))
+            mutate(candidate)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "model.json"
+                path.write_text(json.dumps(candidate))
+                with self.assertRaisesRegex(ValidationError, expected):
+                    validate_model(path)
+
+    def test_warp_row_reduce_and_gemv_cover_tail_rows_and_k(self):
+        for name, input_count in (("cuda_warp_reduce", 1), ("cuda_warp_gemv", 2)):
+            with self.subTest(name=name):
+                model, source = validate_model(EXAMPLES / f"{name}.json")
+                self.assertIn("__shfl_down_sync(0xffffffff, sum, delta)", source)
+                aligned, padded = model["scenarios"]
+                self.assertEqual([tile["valid_cells"] for tile in aligned["tiles"]], [4, 4])
+                self.assertEqual([tile["valid_cells"] for tile in padded["tiles"]], [4, 2])
+                self.assertEqual([step["loop_valid"] for step in padded["steps"]
+                                  if step["id"] == "accumulate"], [32, 5])
+                tail = next(tile for tile in padded["tiles"] if tile["coords"] == [1])
+                self.assertEqual(tail["worker"]["x"], 1)
+                self.assertEqual((tail["bounds"][0]["start"], tail["bounds"][0]["end"]), (4, 6))
+                self.assertEqual([address["samples"][1]["offset"] for address in tail["addresses"]],
+                                 ([4 * 37 + 32, 4] if input_count == 1 else [4 * 37 + 32, 32, 4]))
+                self.assertEqual(padded["row_k_view"]["kind"], "reduce" if input_count == 1 else "gemv")
+                self.assertEqual((padded["row_k_view"]["k_extent"], padded["row_k_view"]["k_size"]),
+                                 (37, 32))
+
+    def test_row_k_view_rejects_unproven_input_and_wrong_loop(self):
+        document = json.loads((EXAMPLES / "cuda_warp_gemv.json").read_text())
+        document["source"]["path"] = str(EXAMPLES / "sources/cuda_warp_gemv.cu")
+        for mutate, expected in (
+            (lambda doc: doc["mapping"]["row_k_view"]["source_refs"].update(vector="missing"),
+             "missing source evidence ref"),
+            (lambda doc: doc["mapping"]["row_k_view"].update(k_size="16"),
+             "K slices do not match"),
+            (lambda doc: doc["mapping"]["row_k_view"].update(output_axis="K"),
+             "output axis must match"),
+        ):
+            candidate = json.loads(json.dumps(document))
+            mutate(candidate)
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "model.json"
+                path.write_text(json.dumps(candidate))
+                with self.assertRaisesRegex(ValidationError, expected):
+                    validate_model(path)
+
     def test_all_examples_and_tail_masks(self):
-        for name in ("cuda_tiled_gemm", "triton_cuda_matmul", "triton_ascend_add"):
+        for name in ("cuda_tiled_gemm", "triton_cuda_matmul", "triton_ascend_add",
+                     "cuda_warp_reduce", "cuda_warp_gemv"):
             with self.subTest(name=name):
                 model, source = validate_model(EXAMPLES / f"{name}.json")
                 self.assertIn(model["kernel"], source)
@@ -117,6 +191,102 @@ class ModelTests(unittest.TestCase):
                 self.assertEqual(tiles[(1, 1)]["start"], len(scenario["steps"]))
                 self.assertEqual(tiles[(0, 1)]["start"], 0)
                 self.assertEqual(scenario["total_ticks"], 2 * len(scenario["steps"]))
+
+
+    def test_malformed_fields_raise_validation_error(self):
+        cases = [
+            (lambda doc: doc.update(schema_version=True), "schema_version"),
+            (lambda doc: doc.update(schema_version=1.0), "schema_version"),
+            (lambda doc: doc.update(backend=[]), "backend must be one of"),
+            (lambda doc: doc["mapping"]["tile_axes"][0].update(name={}), "tile axis names"),
+            (lambda doc: doc["scenarios"][0].update(id=[1]), "scenario ids"),
+        ]
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self._invalid(mutate, message)
+
+    def test_expression_limits(self):
+        from op_show.expr import MAX_EXPRESSION_LENGTH
+        with self.assertRaises(ExpressionError):
+            evaluate("1" + " + 1" * (MAX_EXPRESSION_LENGTH // 2), {})
+        self._invalid(lambda doc: doc["mapping"]["tile_axes"][0].update(
+            index="1" + "+1" * 1200), "formula exceeds")
+
+    def test_invalid_utf8_raises_validation_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.json"
+            path.write_bytes(b'{"schema_version": 1, "title": "\xff"}')
+            with self.assertRaises(ValidationError):
+                validate_model(path)
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            source = directory / "bad.cu"
+            source.write_bytes(b"// tiled_gemm\n\xff\n")
+            document = json.loads((EXAMPLES / "cuda_tiled_gemm.json").read_text())
+            document["source"]["path"] = str(source)
+            path = directory / "model.json"
+            path.write_text(json.dumps(document))
+            with self.assertRaises(ValidationError):
+                validate_model(path)
+
+    def test_loop_coverage_and_budget_limits(self):
+        self._invalid(lambda doc: doc["mapping"]["program"][0].update(repeat="1"),
+                      "repeat must equal ceildiv")
+        def huge_cells(doc):
+            for scenario in doc["scenarios"]:
+                scenario["params"].update(M=2000, N=2000, BM=2000, BN=2000, K=1, BK=1)
+        self._invalid(huge_cells, "cell budget")
+        def address_budget(doc):
+            doc["mapping"]["program"] = [{
+                "repeat": "ceildiv(K, BK)", "loop_axis": "K", "loop_tile": "BK",
+                "loop_source_ref": "loop",
+                "steps": [{"id": "load", "label": "Load", "source_ref": "load"}],
+            }]
+            doc["mapping"]["addresses"] = [{
+                "label": "A", "expr": "row * K + k",
+                "sample": {"row": "tile_M * BM", "k": "phase * BK"},
+                "source_ref": "load",
+            }]
+            for scenario in doc["scenarios"]:
+                params = scenario["params"]
+                scenario["id"] = "aligned" if scenario["id"] == "aligned" else "padded"
+                params.update(M=256, N=1, BM=1, BN=1, K=96, BK=1)
+                if scenario["id"] == "padded":
+                    params["M"] = 255
+        self._invalid(address_budget, "address sample budget")
+
+    def test_size_ref_is_validated(self):
+        document = json.loads((EXAMPLES / "cuda_tiled_gemm.json").read_text())
+        document["source"]["path"] = str(EXAMPLES / "sources/cuda_tiled_gemm.cu")
+        document["source"]["refs"]["tile_const"] = {"line": 4, "contains": "constexpr int BM = 4"}
+        document["mapping"]["tile_axes"][0]["size_ref"] = "tile_const"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.json"
+            path.write_text(json.dumps(document))
+            model, _ = validate_model(path)
+            self.assertEqual(model["scenarios"][0]["dimensions"][0]["size_ref"], "tile_const")
+        document["mapping"]["tile_axes"][0]["size_ref"] = "missing"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.json"
+            path.write_text(json.dumps(document))
+            with self.assertRaisesRegex(ValidationError, "size_ref"):
+                validate_model(path)
+
+    def test_single_k_slice_gemm_view_is_valid(self):
+        document = json.loads((EXAMPLES / "cuda_tensor_core_gemm.json").read_text())
+        document["source"]["path"] = str(EXAMPLES / "sources/cuda_tensor_core_gemm.cu")
+        group = document["mapping"]["program"][0]
+        for key in ("repeat", "loop_axis", "loop_tile", "loop_source_ref"):
+            group.pop(key, None)
+        for scenario in document["scenarios"]:
+            scenario["params"]["K"] = 16
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.json"
+            path.write_text(json.dumps(document))
+            model, _ = validate_model(path)
+            steps = model["scenarios"][0]["steps"]
+            self.assertTrue(all(step["iteration"] is None for step in steps))
+            self.assertEqual(model["scenarios"][0]["gemm_view"]["k_size"], 16)
 
     def test_unknown_mapping_has_no_playable_scenarios(self):
         document = json.loads((EXAMPLES / "cuda_tiled_gemm.json").read_text())

@@ -6,6 +6,9 @@ than ceildiv/min/max, or floating point operations are accepted.
 
 import ast
 
+MAX_EXPRESSION_LENGTH = 1024
+MAX_FORMULA_RESULT = 10**12
+
 
 class ExpressionError(ValueError):
     pass
@@ -14,10 +17,16 @@ class ExpressionError(ValueError):
 def evaluate(expression, variables):
     if not isinstance(expression, str) or not expression.strip():
         raise ExpressionError("formula must be a nonempty string")
+    if len(expression) > MAX_EXPRESSION_LENGTH:
+        raise ExpressionError(
+            f"formula exceeds {MAX_EXPRESSION_LENGTH} characters")
     try:
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as exc:
         raise ExpressionError(f"invalid formula {expression!r}") from exc
+    except (RecursionError, MemoryError) as exc:
+        raise ExpressionError(
+            f"formula is too complex {expression!r}") from exc
 
     def walk(node):
         if isinstance(node, ast.Expression):
@@ -26,10 +35,12 @@ def evaluate(expression, variables):
             return node.value
         if isinstance(node, ast.Name):
             if node.id not in variables:
-                raise ExpressionError(f"unknown variable {node.id!r} in {expression!r}")
+                raise ExpressionError(
+                    f"unknown variable {node.id!r} in {expression!r}")
             value = variables[node.id]
             if type(value) is not int:
-                raise ExpressionError(f"variable {node.id!r} is not an integer")
+                raise ExpressionError(
+                    f"variable {node.id!r} is not an integer")
             return value
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             value = walk(node.operand)
@@ -56,7 +67,10 @@ def evaluate(expression, variables):
                 return min(args) if node.func.id == "min" else max(args)
         raise ExpressionError(f"unsupported formula syntax in {expression!r}")
 
-    value = walk(tree)
-    if abs(value) > 10**12:
+    try:
+        value = walk(tree)
+    except RecursionError as exc:
+        raise ExpressionError("formula is too deep to evaluate") from exc
+    if abs(value) > MAX_FORMULA_RESULT:
         raise ExpressionError("formula result exceeds supported range")
     return value

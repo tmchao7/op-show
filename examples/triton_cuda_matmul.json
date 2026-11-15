@@ -10,6 +10,7 @@
       "grid": {"line": 34, "contains": "triton.cdiv(M, BM) * triton.cdiv(N, BN)"},
       "tile_m": {"line": 12, "contains": "tile_m = pid // tiles_n"},
       "tile_n": {"line": 13, "contains": "tile_n = pid % tiles_n"},
+      "tile_const": {"line": 33, "contains": "BM, BN, BK = 16, 16, 16"},
       "loop": {"line": 19, "contains": "range(tl.cdiv(K, BK))"},
       "load": {"line": 22, "contains": "tl.load(a_ptrs"},
       "compute": {"line": 26, "contains": "acc += tl.dot(a, b)"},
@@ -27,8 +28,8 @@
     "worker_labels": {"x": "tl.program_id(0)"},
     "worker_grid": {"x": "ceildiv(M, BM) * ceildiv(N, BN)"},
     "tile_axes": [
-      {"name": "M", "extent": "M", "size": "BM", "index": "wid_x // ceildiv(N, BN)", "source_ref": "tile_m"},
-      {"name": "N", "extent": "N", "size": "BN", "index": "wid_x % ceildiv(N, BN)", "source_ref": "tile_n"}
+      {"name": "M", "extent": "M", "size": "BM", "size_ref": "tile_const", "index": "wid_x // ceildiv(N, BN)", "source_ref": "tile_m"},
+      {"name": "N", "extent": "N", "size": "BN", "size_ref": "tile_const", "index": "wid_x % ceildiv(N, BN)", "source_ref": "tile_n"}
     ],
     "program": [
       {"repeat": "ceildiv(K, BK)", "loop_axis": "K", "loop_tile": "BK", "loop_source_ref": "loop", "steps": [

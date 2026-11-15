@@ -22,9 +22,15 @@
 | 动画交互 | [CUDA Tiled GEMM Visualizer](https://www.joelfernandes.org/simulators/cuda-tiled-gemm/index.html)、[CUDA Tile Scheduling Studio](https://cudacourseh100.github.io/raster/)、[CUDA Visualizer](https://poojithdevan4d.github.io/cuda-visualizer/) | 输入/输出矩阵联动、PID/wave/padding、访存与执行动画。 |
 | 逐级数据搬运 | [cuda-matmul-study](https://github.com/balaji-ch/cuda-matmul-study) | 分步骤展现 tile 在内存层级之间的路径。 |
 | 社区示意 | [知乎算子讲解](https://zhuanlan.zhihu.com/p/2016054257409867829)、[CSDN 算子文章](https://blog.csdn.net/m0_61864577/article/details/167215457) | 寻找静态矩阵示意和讲解方式，再按本项目源码重画。 |
+| 昇腾 profiling 流水图 | [msOpProf 典型案例](https://raw.atomgit.com/zzzsss1234/msopprof/raw/master/docs/zh/best_practices/typical_cases.md)、[msOpProf 仓库](https://github.com/Ascend/msopprof) | 多 lane 指令流水图、MTE2 与 Vector/Cube 并行、double buffer 重叠的表达方式；仅借结构，不复制实测数据。 |
+| 社区 tiling 讲解 | [CANN ops-blas tiling（CSDN）](https://blog.csdn.net/m0_68635815/article/details/153204714) | Cube/L1 buffer、16×16 最小 tile 与 tiling 策略的讲解顺序。 |
+| NVIDIA profiling 视图 | [Nsight Systems](https://docs.nvidia.com/nsight-systems/UserGuide/index.html)、[Nsight Compute](https://docs.nvidia.com/nsight-compute/) | 时间线/内存层级/roofline 的可视化范式；本项目只借阅读方式，不展示利用率或实测耗时。 |
 | 暖色与矩阵配色 | [Rosé Pine Dawn](https://github.com/rose-pine/rose-pine-palette)、[react-matrix](https://github.com/bronz3beard/react-matrix) | 暖白分层、柔和色组和浅色矩阵阅读体验。 |
+| 矩阵/表格前端 | [W3C APG Grid](https://www.w3.org/WAI/ARIA/apg/patterns/grid/)、[Material data tables](https://m1.material.io/components/data-tables.html)、[NN/g data tables](https://www.nngroup.com/articles/data-tables/) | roving tabindex 与方向键导航、表头/密度/对齐、表格比较 vs 卡片详情。 |
+| 可视化色彩与图例 | [Carbon color palettes](https://www.carbondesignsystem.com/data-visualization/color-palettes/)、[Carbon chart anatomy](https://www.carbondesignsystem.com/data-visualization/chart-anatomy/) | 分类色/顺序色的区别、轴与图例、颜色不作为唯一编码。 |
+| 数据表可读性 | [Figr data table design](https://figr.design/blog/data-table-design)、[raw.studio 5 checks](https://raw.studio/blog/data-table-ux) | 上下文/冻结标识、粘性表头、语义结构、状态与可访问性。 |
 
-[Triton-Ascend 的 TileLens/Triton-Viz 讨论](https://github.com/triton-lang/triton-ascend/issues/1908)记录了相关工具在 Ascend 上的适配问题；引用时应核对 issue 的最新进展。
+[Triton-Ascend 的 TileLens/Triton-Viz 讨论](https://github.com/triton-lang/triton-ascend/issues/1908)记录了相关工具在 Ascend 上的适配问题；引用时应核对 issue 的最新进展。本轮关于时间线、源码引用索引与分享链接的调研记录见 [docs/research-visualization.md](docs/research-visualization.md)，矩阵/表格化 UI 的调研记录见 [docs/research-ui-matrix.md](docs/research-ui-matrix.md)。
 
 ## 源码约束与逻辑正确性
 
@@ -36,7 +42,7 @@
 ## 前端视觉与交互
 
 - 沿用暖白界面：页面 `#FBF7F1`、面板 `#FFFDF9`、正文 `#342A24`、分隔线 `#E7D8C8`、主色 `#B85437`。优先使用 `op_show/web/styles.css` 中的语义变量，避免零散硬编码和经典深色开发者界面。
-- 排版先建立清楚的阅读顺序和对齐关系：标题、控制器、矩阵、时间轴、详情、源码。控制留白、字号层级、卡片宽度、边框与间距；新视图要与旧视图协调。
+- 排版先建立清楚的阅读顺序和对齐关系：标题、控制器、矩阵、时间轴、详情、源码。控制留白、字号层级、卡片宽度、边框与间距；新视图要与旧视图协调。矩阵视图统一使用 `matrix-frame` / `matrix-axis` / `--matrix-gap` 等共享样式，不要把每个矩阵的间距、轴标签和圆角各写一套。
 - G0–G4 的柔和颜色只表达**数据分组**；执行状态用明暗和描边表达；选中态用深色外描边；tail/masked 用文字或斜纹表达。不要只靠颜色传递含义。
 - 保持中文默认与中英切换，新文案两种语言都要补齐。检查对比度、键盘焦点、悬停、长文本、横向滚动和窄屏标签页。桌面与手机宽度都要实际检查；若环境无法模拟窄屏，要明确记录未验证项。
 - 不随意引入前端框架或构建步骤。确需依赖时先调研已有轻量方案及维护成本。

@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "title": "CUDA Warp · GEMV",
+  "title_zh": "CUDA Warp · 矩阵向量乘",
+  "backend": "cuda",
+  "source": {
+    "path": "sources/cuda_warp_gemv.cu",
+    "kernel": "warp_gemv",
+    "refs": {
+      "grid": {
+        "line": 25,
+        "contains": "dim3 grid("
+      },
+      "tile": {
+        "line": 11,
+        "contains": "const int row = blockIdx.x * ROWS_PER_BLOCK + warp"
+      },
+      "block_size": {
+        "line": 5,
+        "contains": "constexpr int ROWS_PER_BLOCK = 4"
+      },
+      "loop": {
+        "line": 13,
+        "contains": "for (int k0 = 0; k0 < K; k0 += WARP_K)"
+      },
+      "load": {
+        "line": 15,
+        "contains": "if (row < M && k < K) sum += A[row * K + k] * x[k]"
+      },
+      "reduce": {
+        "line": 18,
+        "contains": "sum += __shfl_down_sync(0xffffffff, sum, delta)"
+      },
+      "store": {
+        "line": 20,
+        "contains": "y[row] = sum"
+      },
+      "launch": {
+        "line": 24,
+        "contains": "dim3 block(ROWS_PER_BLOCK * WARP_K)"
+      }
+    }
+  },
+  "mapping": {
+    "status": "source-backed",
+    "note": "Illustrative contiguous row-major inputs. One 128-thread block owns four output rows; each complete warp handles one row. Logical steps only.",
+    "note_zh": "示例采用连续行主序输入。一个 128 线程 block 负责 4 个输出行，每个完整 warp 处理 1 行；仅展示逻辑阶段。",
+    "grid_source_ref": "grid",
+    "worker_labels": {
+      "x": "blockIdx.x"
+    },
+    "worker_grid": {
+      "x": "ceildiv(M, BR)"
+    },
+    "tile_axes": [
+      {
+        "name": "M",
+        "extent": "M",
+        "size": "BR",
+        "size_ref": "block_size",
+        "index": "wid_x",
+        "source_ref": "tile"
+      }
+    ],
+    "program": [
+      {
+        "repeat": "ceildiv(K, BK)",
+        "loop_axis": "K",
+        "loop_tile": "BK",
+        "loop_source_ref": "loop",
+        "steps": [
+          {
+            "id": "accumulate",
+            "label": "Load A/x and accumulate products",
+            "label_zh": "加载 A/x 并累加乘积",
+            "source_ref": "load"
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "id": "warp-reduce",
+            "label": "Reduce 32 lane sums",
+            "label_zh": "归约 32 个 lane 的局部和",
+            "source_ref": "reduce"
+          },
+          {
+            "id": "store",
+            "label": "Store valid output rows",
+            "label_zh": "写回有效输出行",
+            "source_ref": "store"
+          }
+        ]
+      }
+    ],
+    "addresses": [
+      {
+        "label": "A first element offset",
+        "label_zh": "A 首元素偏移",
+        "expr": "row * K + k",
+        "sample": {
+          "row": "tile_M * BR",
+          "k": "phase * BK"
+        },
+        "source_ref": "load"
+      },
+      {
+        "label": "x first element offset",
+        "label_zh": "x 首元素偏移",
+        "expr": "k",
+        "sample": {
+          "k": "phase * BK"
+        },
+        "source_ref": "load"
+      },
+      {
+        "label": "y first element offset",
+        "label_zh": "y 首元素偏移",
+        "expr": "row",
+        "sample": {
+          "row": "tile_M * BR"
+        },
+        "source_ref": "store"
+      }
+    ],
+    "dependencies": [],
+    "row_k_view": {
+      "kind": "gemv",
+      "output_axis": "M",
+      "k_extent": "K",
+      "k_size": "BK",
+      "source_refs": {
+        "matrix": "load",
+        "output": "store",
+        "reduce": "reduce",
+        "vector": "load"
+      },
+      "step_roles": {
+        "accumulate": [
+          "matrix",
+          "vector"
+        ],
+        "warp-reduce": [
+          "output"
+        ],
+        "store": [
+          "output"
+        ]
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "aligned",
+      "label": "8 rows × K=64 · full tiles",
+      "label_zh": "8 行、K=64 · 完整 tile",
+      "params": {
+        "M": 8,
+        "K": 64,
+        "BR": 4,
+        "BK": 32
+      }
+    },
+    {
+      "id": "padded",
+      "label": "6 rows × K=37 · row and K tails",
+      "label_zh": "6 行、K=37 · 行与 K 尾块",
+      "params": {
+        "M": 6,
+        "K": 37,
+        "BR": 4,
+        "BK": 32
+      }
+    }
+  ]
+}

@@ -10,6 +10,8 @@
       "grid": {"line": 36, "contains": "dim3 grid((N + BN - 1) / BN, (M + BM - 1) / BM)"},
       "tile_m": {"line": 10, "contains": "tile_m = blockIdx.y"},
       "tile_n": {"line": 11, "contains": "tile_n = blockIdx.x"},
+      "tile_m_const": {"line": 4, "contains": "constexpr int BM = 4"},
+      "tile_n_const": {"line": 5, "contains": "constexpr int BN = 4"},
       "loop": {"line": 20, "contains": "k0 < K; k0 += BK"},
       "load": {"line": 22, "contains": "A[row * K + k0 + local_n]"},
       "sync": {"line": 25, "contains": "__syncthreads()"},
@@ -21,14 +23,14 @@
   },
   "mapping": {
     "status": "source-backed",
-    "note": "One CUDA block owns one output tile. All independent blocks advance together in this idealized walkthrough.",
-    "note_zh": "每个 CUDA block 负责一个输出 tile；此逻辑演示中，无依赖的 block 同时推进。",
+    "note": "One CUDA block owns one output tile. All independent blocks advance together in this idealized walkthrough. This teaching kernel requires BM == BN == BK; the sample uses 4/4/4.",
+    "note_zh": "每个 CUDA block 负责一个输出 tile；此逻辑演示中，无依赖的 block 同时推进。该教学 kernel 要求 BM == BN == BK，示例取 4/4/4。",
     "grid_source_ref": "grid",
     "worker_labels": {"x": "blockIdx.x", "y": "blockIdx.y"},
     "worker_grid": {"x": "ceildiv(N, BN)", "y": "ceildiv(M, BM)"},
     "tile_axes": [
-      {"name": "M", "extent": "M", "size": "BM", "index": "wid_y", "source_ref": "tile_m"},
-      {"name": "N", "extent": "N", "size": "BN", "index": "wid_x", "source_ref": "tile_n"}
+      {"name": "M", "extent": "M", "size": "BM", "size_ref": "tile_m_const", "index": "wid_y", "source_ref": "tile_m"},
+      {"name": "N", "extent": "N", "size": "BN", "size_ref": "tile_n_const", "index": "wid_x", "source_ref": "tile_n"}
     ],
     "program": [
       {"repeat": "ceildiv(K, BK)", "loop_axis": "K", "loop_tile": "BK", "loop_source_ref": "loop", "steps": [

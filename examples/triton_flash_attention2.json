@@ -1,0 +1,314 @@
+{
+  "schema_version": 1,
+  "title": "Triton CUDA · FlashAttention-2 forward (teaching)",
+  "title_zh": "Triton CUDA · FlashAttention-2 前向教学版",
+  "backend": "triton-cuda",
+  "source": {
+    "path": "sources/triton_flash_attention2.py",
+    "kernel": "flash_attention2_forward_demo",
+    "refs": {
+      "grid": {
+        "line": 56,
+        "contains": "grid = (triton.cdiv(m, bm),)"
+      },
+      "q_tile": {
+        "line": 17,
+        "contains": "q_idx = pid_m * BM + tl.arange(0, BM)"
+      },
+      "d_tile": {
+        "line": 18,
+        "contains": "d_idx = tl.arange(0, D)"
+      },
+      "block_const": {
+        "line": 55,
+        "contains": "bm, bn = 16, 16"
+      },
+      "d_const": {
+        "line": 50,
+        "contains": "assert d == kd == v.shape[1] == out.shape[1] == 16"
+      },
+      "q_load": {
+        "line": 19,
+        "contains": "q = tl.load(Q + q_idx[:, None] * D + d_idx[None, :]"
+      },
+      "loop": {
+        "line": 25,
+        "contains": "for n0 in range(tl.cdiv(N, BN))"
+      },
+      "k_load": {
+        "line": 27,
+        "contains": "k = tl.load(K + k_idx[:, None] * D + d_idx[None, :]"
+      },
+      "v_load": {
+        "line": 29,
+        "contains": "v = tl.load(V + k_idx[:, None] * D + d_idx[None, :]"
+      },
+      "score": {
+        "line": 31,
+        "contains": "score = tl.dot(q, tl.trans(k)).to(tl.float32) * SCALE"
+      },
+      "mask": {
+        "line": 32,
+        "contains": "score = tl.where(k_idx[None, :] < N, score, -float(\"inf\"))"
+      },
+      "max": {
+        "line": 33,
+        "contains": "m_next = tl.maximum(m_i, tl.max(score, 1))"
+      },
+      "alpha": {
+        "line": 34,
+        "contains": "alpha = tl.exp(m_i - m_next)"
+      },
+      "prob": {
+        "line": 35,
+        "contains": "p = tl.exp(score - m_next[:, None])"
+      },
+      "pv": {
+        "line": 37,
+        "contains": "acc = tl.dot(p.to(tl.float16), v, acc)"
+      },
+      "sum": {
+        "line": 38,
+        "contains": "l_i = l_i * alpha + tl.sum(p, 1)"
+      },
+      "normalize": {
+        "line": 41,
+        "contains": "out = acc / l_i[:, None]"
+      },
+      "store": {
+        "line": 42,
+        "contains": "tl.store(O + q_idx[:, None] * D + d_idx[None, :], out,"
+      }
+    }
+  },
+  "mapping": {
+    "status": "source-backed",
+    "note": "Illustrative single-head, noncausal, no-dropout fp16 attention with D=16. One Triton program owns one 16-row output tile; this is logical FA2-style online softmax, not a tuned device schedule.",
+    "note_zh": "示例为单 head、非 causal、无 dropout、D=16 的 fp16 attention。每个 Triton program 负责 16 行输出；展示 FA2 风格在线 softmax 的逻辑关系，不代表优化后的设备调度。",
+    "grid_source_ref": "grid",
+    "worker_labels": {
+      "x": "tl.program_id(0)"
+    },
+    "worker_grid": {
+      "x": "ceildiv(M, BM)"
+    },
+    "tile_axes": [
+      {
+        "name": "M",
+        "extent": "M",
+        "size": "BM",
+        "size_ref": "block_const",
+        "index": "wid_x",
+        "source_ref": "q_tile"
+      },
+      {
+        "name": "D",
+        "extent": "D",
+        "size": "BD",
+        "size_ref": "d_const",
+        "index": "wid_y",
+        "source_ref": "d_tile"
+      }
+    ],
+    "program": [
+      {
+        "steps": [
+          {
+            "id": "load-q",
+            "label": "Load query tile",
+            "label_zh": "加载 Q 行块",
+            "source_ref": "q_load"
+          }
+        ]
+      },
+      {
+        "repeat": "ceildiv(N, BN)",
+        "loop_axis": "N",
+        "loop_tile": "BN",
+        "loop_source_ref": "loop",
+        "steps": [
+          {
+            "id": "load-kv",
+            "label": "Load K/V tile",
+            "label_zh": "加载 K/V 分片",
+            "source_ref": "k_load"
+          },
+          {
+            "id": "qk",
+            "label": "Compute QKᵀ scores",
+            "label_zh": "计算 QKᵀ 分数",
+            "source_ref": "score"
+          },
+          {
+            "id": "mask",
+            "label": "Mask tail keys",
+            "label_zh": "屏蔽尾部 key",
+            "source_ref": "mask"
+          },
+          {
+            "id": "max",
+            "label": "Update row maxima",
+            "label_zh": "更新行最大值",
+            "source_ref": "max"
+          },
+          {
+            "id": "rescale",
+            "label": "Rescale previous accumulator",
+            "label_zh": "缩放已有累加值",
+            "source_ref": "alpha"
+          },
+          {
+            "id": "pv",
+            "label": "Accumulate probability × V",
+            "label_zh": "累加概率 × V",
+            "source_ref": "pv"
+          },
+          {
+            "id": "sum",
+            "label": "Update row sums",
+            "label_zh": "更新行归一化分母",
+            "source_ref": "sum"
+          }
+        ]
+      },
+      {
+        "steps": [
+          {
+            "id": "normalize",
+            "label": "Normalize output",
+            "label_zh": "归一化输出",
+            "source_ref": "normalize"
+          },
+          {
+            "id": "store",
+            "label": "Store valid output rows",
+            "label_zh": "写回有效输出行",
+            "source_ref": "store"
+          }
+        ]
+      }
+    ],
+    "addresses": [
+      {
+        "label": "Q first element offset",
+        "label_zh": "Q 首元素偏移",
+        "expr": "row * D + d",
+        "sample": {
+          "row": "tile_M * BM",
+          "d": "tile_D * BD"
+        },
+        "source_ref": "q_load"
+      },
+      {
+        "label": "K first element offset",
+        "label_zh": "K 首元素偏移",
+        "expr": "key * D + d",
+        "sample": {
+          "key": "phase * BN",
+          "d": "0"
+        },
+        "source_ref": "k_load"
+      },
+      {
+        "label": "V first element offset",
+        "label_zh": "V 首元素偏移",
+        "expr": "key * D + d",
+        "sample": {
+          "key": "phase * BN",
+          "d": "0"
+        },
+        "source_ref": "v_load"
+      },
+      {
+        "label": "O first element offset",
+        "label_zh": "O 首元素偏移",
+        "expr": "row * D + d",
+        "sample": {
+          "row": "tile_M * BM",
+          "d": "tile_D * BD"
+        },
+        "source_ref": "store"
+      }
+    ],
+    "dependencies": [],
+    "attention_view": {
+      "q_axis": "M",
+      "d_axis": "D",
+      "n_extent": "N",
+      "n_size": "BN",
+      "source_refs": {
+        "q": "q_load",
+        "k": "k_load",
+        "v": "v_load",
+        "score": "score",
+        "softmax": "max",
+        "o": "store"
+      },
+      "step_roles": {
+        "load-q": [
+          "Q"
+        ],
+        "load-kv": [
+          "K",
+          "V"
+        ],
+        "qk": [
+          "Q",
+          "K",
+          "S"
+        ],
+        "mask": [
+          "S"
+        ],
+        "max": [
+          "S"
+        ],
+        "rescale": [
+          "O"
+        ],
+        "pv": [
+          "S",
+          "V",
+          "O"
+        ],
+        "sum": [
+          "S"
+        ],
+        "normalize": [
+          "O"
+        ],
+        "store": [
+          "O"
+        ]
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "id": "aligned",
+      "label": "M=N=32,D=16 · full tiles",
+      "label_zh": "M=N=32、D=16 · 完整 tile",
+      "params": {
+        "M": 32,
+        "N": 32,
+        "D": 16,
+        "BM": 16,
+        "BN": 16,
+        "BD": 16
+      }
+    },
+    {
+      "id": "padded",
+      "label": "M=27,N=21,D=16 · query/key tails",
+      "label_zh": "M=27、N=21、D=16 · Q/K 尾块",
+      "params": {
+        "M": 27,
+        "N": 21,
+        "D": 16,
+        "BM": 16,
+        "BN": 16,
+        "BD": 16
+      }
+    }
+  ]
+}

@@ -58,7 +58,7 @@ def _checked_formula(formulas, key, env, expected, context):
     return actual
 
 
-def _scenario(document, scenario, formulas, formula_refs, event_refs):
+def _scenario(scenario, formulas, formula_refs, event_refs):
     name = scenario["id"]
     params = scenario.get("params")
     _require(isinstance(params, dict) and PARAM_KEYS <= params.keys(),
@@ -71,7 +71,8 @@ def _scenario(document, scenario, formulas, formula_refs, event_refs):
         p["total_cores"], p["producer_cores"], p["consumer_cores"])
     wave_size, block_s, block_d = p["s_wave"], p["block_s"], p["block_d"]
     group_size, signal_stride = p["heads_per_group"], p["signal_stride"]
-    _require(2 <= total <= 256 and rank_size <= 16, f"{name}: core or rank count is outside demo limits")
+    _require(2 <= total <= 256 and 2 <= rank_size <= 16,
+             f"{name}: core or rank count is outside demo limits")
     _require(producer_count == (total + 1) // 2 and consumer_count == total - producer_count,
              f"{name}: producer/consumer core split does not match source")
     _require(hpr > 4 and group_size == (2 if hpr <= 16 else 4),
@@ -283,7 +284,8 @@ def _scenario(document, scenario, formulas, formula_refs, event_refs):
 
 
 def validate_trace_model(document, model_path):
-    _require(document.get("backend") in BACKENDS, "v2 backend is not supported")
+    _require(isinstance(document.get("backend"), str) and document["backend"] in BACKENDS,
+             "v2 backend is not supported")
     _require(isinstance(document.get("title"), str) and document["title"], "title is required")
     title_zh = _localized(document, "title_zh", "model")
     source_text, refs = _source_and_refs(document, model_path)
@@ -322,10 +324,23 @@ def validate_trace_model(document, model_path):
                  f"trace.formulas.{key} must be a nonempty expression")
     for key in EVENT_REFS:
         _evidence(event_refs[key], refs, f"trace.events.{key}")
+    param_refs = trace.get("param_refs")
+    if param_refs is not None:
+        _require(isinstance(param_refs, dict) and
+                 all(isinstance(key, str) and key and
+                     isinstance(value, str) and value
+                     for key, value in param_refs.items()),
+                 "trace.param_refs must map names to evidence keys")
+        for key, ref_key in param_refs.items():
+            _evidence(ref_key, refs, f"trace.param_refs.{key}")
+        base["param_refs"] = param_refs
     scenarios = document.get("scenarios")
     _require(isinstance(scenarios, list) and len(scenarios) == 2 and
-             {item.get("id") for item in scenarios if isinstance(item, dict)} ==
-             {"aligned", "padded"}, "v2 requires aligned and padded scenarios")
-    base["scenarios"] = [_scenario(document, scenario, formulas, formula_refs, event_refs)
+             all(isinstance(item, dict) for item in scenarios) and
+             all(isinstance(item.get("id"), str) for item in scenarios) and
+             {item["id"] for item in scenarios} == {"aligned", "padded"},
+             "v2 requires aligned and padded scenarios")
+    base["scenarios"] = [_scenario(scenario, formulas, formula_refs, event_refs)
                          for scenario in scenarios]
+    base["scenarios"].sort(key=lambda item: 0 if item["id"] == "aligned" else 1)
     return base, source_text

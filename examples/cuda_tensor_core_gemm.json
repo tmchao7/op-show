@@ -19,6 +19,14 @@
         "line": 16,
         "contains": "const int tile_n = blockIdx.x"
       },
+      "tile_m_const": {
+        "line": 9,
+        "contains": "constexpr int TILE_M = 16"
+      },
+      "tile_n_const": {
+        "line": 10,
+        "contains": "constexpr int TILE_N = 16"
+      },
       "loop": {
         "line": 30,
         "contains": "for (int k0 = 0; k0 < K; k0 += TILE_K)"
@@ -103,6 +111,7 @@
         "name": "M",
         "extent": "M",
         "size": "BM",
+        "size_ref": "tile_m_const",
         "index": "wid_y",
         "source_ref": "tile_m"
       },
@@ -110,6 +119,7 @@
         "name": "N",
         "extent": "N",
         "size": "BN",
+        "size_ref": "tile_n_const",
         "index": "wid_x",
         "source_ref": "tile_n"
       }
@@ -125,7 +135,7 @@
             "id": "stage",
             "label": "Stage A/B with zero padding",
             "label_zh": "A/B 零填充到共享内存",
-            "source_ref": "stage"
+            "source_ref": "mask_a"
           },
           {
             "id": "sync",
